@@ -37,7 +37,7 @@ Battle-Agents/
 
 1. **Clone the repo**
    ```bash
-   git clone https://github.com/your-username/Battle-Agents.git
+   git clone https://github.com/buzzfit/Battle-Agents.git
    cd Battle-Agents
    ```
 
