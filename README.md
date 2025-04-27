@@ -11,6 +11,7 @@ A self‑play, deep‑reinforcement‑learning (DQN)–powered 2D fighting simul
 - **Emergent behavior:** Watch them invent hit‑and‑run, corner‑trap pressure, timed heavy attacks, and even double‑jumps!
 - **Replay buffer & target network:** Stable training with experience replay and periodic target‑network updates.
 - **Extensible architecture:** Easily add new actions (dash, block, combos), tweak rewards, or change arena settings.
+![battle_agents_demo](https://github.com/user-attachments/assets/79181c54-0c9b-4cb4-8844-dc1feb5d3415)
 
 ---
 
@@ -58,7 +59,7 @@ Battle-Agents/
 ---
 
 *This simulator is fully autonomous: the agents train and play against each other without manual input.*
-![Uploading battle_agents_demo.gif…]()
+
 
 ---
 
