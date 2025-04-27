@@ -58,6 +58,7 @@ Battle-Agents/
 ---
 
 *This simulator is fully autonomous: the agents train and play against each other without manual input.*
+![Uploading battle_agents_demo.gif…]()
 
 ---
 
