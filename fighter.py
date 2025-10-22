@@ -5,6 +5,7 @@ from collections import deque
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import os
 
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
@@ -25,7 +26,7 @@ class DQN(nn.Module):
         return self.layers(x)
 
 class Fighter:
-    def __init__(self, player, x, y, flip, data, sprite_sheet, animation_steps, attack_sound, screen_width):
+    def __init__(self, player, x, y, flip, data, sprite_sheet, animation_steps, attack_sound, screen_width, role, training_phase, continue_from_episode = 0):
         # basic attributes
         self.player        = player
         self.size, self.image_scale, self.offset = data
@@ -47,6 +48,11 @@ class Fighter:
         self.death_played  = False
         self.attack_sound  = attack_sound
         self.screen_width  = screen_width
+        self.episode_reward = 0.0
+
+        # differentiate roles
+        self.role = role
+        self.training_phase = training_phase
 
         # DQN setup
         self.device            = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -57,17 +63,62 @@ class Fighter:
         self.lr                = 1e-4
         self.epsilon           = 1.0
         self.epsilon_min       = 0.1
-        self.epsilon_decay     = 0.995
+        self.epsilon_decay     = 0.9995
+        self.epsilon_linear_end = 0.05
+        self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
+        self.current_episode = 0
         self.memory            = deque(maxlen=10000)
-        self.train_start       = 1000
-        self.update_target_steps = 1000
+        self.train_start       = 256
+        self.update_target_steps = 500
         self.step_count        = 0
+
+        # if self.training_phase==1 or self.role=="enemy":
 
         self.policy_net = DQN(self.state_dim, self.action_space).to(self.device)
         self.target_net = DQN(self.state_dim, self.action_space).to(self.device)
+        
+        npc_model_path = None
+        npc_optim_path = None
+
+        # if continue_from_episode>0:
+        if self.role=="enemy":
+            npc_model_path = f"weights/player_2/phase_2/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_2/phase_2/optimizer/_ep_{continue_from_episode}.pth"
+        else: 
+            npc_model_path = f"weights/player_1/phase_1/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_1/phase_1/optimizer/_ep_{continue_from_episode}.pth"
+
+        print("path", npc_model_path, npc_optim_path)
+
+
+        if os.path.exists(npc_model_path):
+                self.policy_net.load_state_dict(torch.load(npc_model_path, map_location=self.device))
+                print("[INFO] Loaded NPC policy weights from Phase 1")
+                if os.path.exists(npc_optim_path):
+                    self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+                    self.optimizer.load_state_dict(torch.load(npc_optim_path, map_location=self.device))
+                    print(f"[INFO] Loaded {self.role} optimizer state from Phase 1")
+        else:
+            # fallback if optimizer not found
+            print(f"[WARN] {self.role} optimizer state not found. Using default optimizer.")
+            self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+            self.target_net.load_state_dict(self.policy_net.state_dict())
+        
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+
+        if self.training_phase==2 and self.role=="player":
+            self.optimizer = None
+
+
+    def anneal_epsilon(self):
+        if self.current_episode >= self.epsilon_anneal_episodes:
+            self.epsilon = self.epsilon_linear_end
+        else:
+            start = 1.0
+            end = self.epsilon_linear_end
+            t = self.current_episode / max(1, self.epsilon_anneal_episodes)
+            self.epsilon = start + t * (end - start)  # linear interpolation
 
     def load_images(self, sheet, steps):
         animation_list = []
@@ -101,7 +152,7 @@ class Fighter:
 
     def optimize(self):
         if len(self.memory) < max(self.train_start, self.batch_size):
-            return
+            return None, None
 
         batch = random.sample(self.memory, self.batch_size)
         states, actions, rewards, next_states, dones = zip(*batch)
@@ -120,15 +171,25 @@ class Fighter:
             q_next   = self.target_net(next_states_v).max(1)[0].unsqueeze(1)
             q_target = rewards_v + (1.0 - dones_v) * self.gamma * q_next
 
-        loss = nn.MSELoss()(q_pred, q_target)
+        # loss = nn.MSELoss()(q_pred, q_target)
+
+        # Use Huber loss for stability
+        loss_fn = nn.SmoothL1Loss()
+        loss = loss_fn(q_pred, q_target)
+
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
 
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        # if self.epsilon > self.epsilon_min:
+        #     self.epsilon *= self.epsilon_decay
 
-    def move(self, other, round_over):
+        avg_q_pred = q_pred.mean().item()
+        return float(loss.item()), avg_q_pred
+        # return float(loss.item())
+
+    def move(self, other, round_over, elapsed):
         if round_over:
             return
 
@@ -139,6 +200,7 @@ class Fighter:
         action = self.select_action(state)
         reward = 0.0
         done   = False
+        prev_dx = abs(self.rect.x - other.rect.x)
 
         SPEED, GRAVITY = 10, 2
         dx, dy = 0, 0
@@ -154,15 +216,50 @@ class Fighter:
             self.jump  = True
         elif action in (3, 4) and self.attack_cooldown == 0:
             self.attacking = True
-            self.attack_sound.play()
+            # self.attack_sound.play()
+           
             rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
                     if not self.flip else
                     pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+            
+            # reward
+            new_dx = abs(self.rect.x - other.rect.x)
+            shaping = (prev_dx - new_dx) * 2  # small positive if you moved closer
+            reward = shaping
+
+            if not self.training_phase == 1:
+                # reward = balance_reward + alive_bonus + fast_end_penalty
+                target_time = 60.0
+                sigma = 20.0  # spread in seconds
+                duration_reward = 0.2 * np.exp(-((elapsed - target_time)**2) / (2 * sigma**2)) - 0.1
+                reward += duration_reward
+
             if rect.colliderect(other.rect):
-                other.health -= 10
-                reward = 1.0
+                other.health -= 10/3
+
+                if self.training_phase==1 or self.role == "player":
+                    reward = 1.0
+                else :
+                    # Phase 2 (DDA): aim for fun balance
+                    health_diff = abs(self.health - other.health) / 100.0
+
+                    # Reward highest when healths are close
+                    balance_reward = 1.0 - (health_diff * 2.5)  # penalize big gaps
+                    balance_reward = np.clip(balance_reward, -1.0, 1.0)
+                    reward += balance_reward
+                    # # Add small engagement bonus if both still alive
+                    # alive_bonus = 0.1 if self.alive and other.alive else 0.0
+
+                    # # Slight penalty if fight ends too fast (boring)
+                    # fast_end_penalty = -0.5 if not other.alive or not self.alive else 0.0
+
+
             else:
-                reward = -0.1
+                reward += -0.3
+
+            reward *= 5
+            reward = max(-5.0, min(reward, 5.0))
+            self.episode_reward += reward
             self.attack_cooldown = 20
 
         # block overlap
@@ -182,7 +279,9 @@ class Fighter:
 
         next_state = self.get_state(other)
         self.remember(state, action, reward, next_state, done)
-        self.optimize()
+        
+        if not (self.training_phase == 2 and self.role == "player"):
+            self.optimize()
 
         self.step_count += 1
         if self.step_count % self.update_target_steps == 0:
@@ -240,6 +339,7 @@ class Fighter:
                         self.rect.y - self.offset[1] * self.image_scale))
 
     def reset(self):
+        self.episode_reward = 0.0
         self.health       = 100
         self.alive        = True
         self.death_played = False
