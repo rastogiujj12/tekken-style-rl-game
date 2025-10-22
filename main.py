@@ -6,11 +6,13 @@ from logger import Logger
 
 mixer.init()
 pygame.init()
-PHASE = 3
+PHASE = 2
 
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
-player1_variants = [x for x in range(0,1000,50)]
-chosen_variant = random.choice(player1_variants)
+
+if not PHASE ==1:
+    player1_variants = [x for x in range(0,1000,50)]
+    chosen_variant = random.choice(player1_variants)
 print("chosen_variant", chosen_variant)
 
 SAVE_INTERVAL = 50
@@ -23,12 +25,12 @@ episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes
 print(f"[INFO] Logging to {step_logger.path()}")
 
 #make folder structure
-os.makedirs("weights/player_1/phase_{PHASE}/model", exist_ok=True)
-os.makedirs("weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
+os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
 
 
-os.makedirs("weights/player_2/phase_{PHASE}/model", exist_ok=True)
-os.makedirs("weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
+os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
 
 os.makedirs("recordings", exist_ok=True)
 
@@ -119,8 +121,10 @@ def get_latest_episode(pattern):
 
     return ep_num
 
-episodes_elapsed = get_latest_episode("weights/player_1/phase_3/model/_ep_*.pth")
+episodes_elapsed = get_latest_episode(f"weights/player_1/phase_{PHASE}/model/_ep_*.pth")
 print("episodes_elapsed", episodes_elapsed)
+if PHASE == 1:
+    chosen_variant = episodes_elapsed
     # if episodes_elapsed >= TOTAL_EPISODES:
     #     PHASE = 2
 
