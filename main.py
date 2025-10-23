@@ -157,6 +157,8 @@ if not PHASE == 1:
 run = True
 episode_step=0
 while run:
+    if episodes_elapsed>TOTAL_EPISODES:
+        run = False
     episode_step+=1
     clock.tick(FPS)
     draw_bg()

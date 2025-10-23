@@ -10,20 +10,26 @@ import os
 class DQN(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(input_dim, 256),
+        self.feature = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.ReLU()
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(256, 256),
+            nn.Linear(128, 1)
+        )
+        self.adv_stream = nn.Sequential(
+            nn.Linear(128, 128),
             nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, output_dim)
+            nn.Linear(128, output_dim)
         )
 
     def forward(self, x):
-        return self.layers(x)
+        f = self.feature(x)
+        value = self.value_stream(f)
+        adv = self.adv_stream(f)
+        return value + (adv - adv.mean(dim=1, keepdim=True))
 
 class Fighter:
     def __init__(self, player, x, y, flip, data, sprite_sheet, animation_steps, attack_sound, screen_width, role, training_phase, continue_from_episode = 0):
@@ -69,7 +75,7 @@ class Fighter:
         self.current_episode = 0
         self.memory            = deque(maxlen=10000)
         self.train_start       = 256
-        self.update_target_steps = 500
+        self.update_target_steps = 200
         self.step_count        = 0
 
         # if self.training_phase==1 or self.role=="enemy":
@@ -95,13 +101,23 @@ class Fighter:
                 self.policy_net.load_state_dict(torch.load(npc_model_path, map_location=self.device))
                 print("[INFO] Loaded NPC policy weights from Phase 1")
                 if os.path.exists(npc_optim_path):
-                    self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+                    self.optimizer = optim.Adam(self.policy_net.parameters(), 
+                                                lr=self.lr,
+                                                betas=(0.9, 0.999),
+                                                eps=1e-08,
+                                                weight_decay=0.0
+                                            )
                     self.optimizer.load_state_dict(torch.load(npc_optim_path, map_location=self.device))
                     print(f"[INFO] Loaded {self.role} optimizer state from Phase 1")
         else:
             # fallback if optimizer not found
             print(f"[WARN] {self.role} optimizer state not found. Using default optimizer.")
-            self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.lr)
+            self.optimizer = optim.Adam(self.policy_net.parameters(), 
+                                            lr=self.lr,
+                                            betas=(0.9, 0.999),
+                                            eps=1e-08,
+                                            weight_decay=0.0
+                                        )
             self.target_net.load_state_dict(self.policy_net.state_dict())
         
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -112,13 +128,17 @@ class Fighter:
 
 
     def anneal_epsilon(self):
-        if self.current_episode >= self.epsilon_anneal_episodes:
-            self.epsilon = self.epsilon_linear_end
-        else:
-            start = 1.0
-            end = self.epsilon_linear_end
-            t = self.current_episode / max(1, self.epsilon_anneal_episodes)
-            self.epsilon = start + t * (end - start)  # linear interpolation
+        self.epsilon = max(
+            self.epsilon_linear_end,
+            1 - (self.current.episode / self.epsilon_anneal_episodes) * (1 - self.epsilon_linear_end)
+        )
+        # if self.current_episode >= self.epsilon_anneal_episodes:
+        #     self.epsilon = self.epsilon_linear_end
+        # else:
+        #     start = 1.0
+        #     end = self.epsilon_linear_end
+        #     t = self.current_episode / max(1, self.epsilon_anneal_episodes)
+        #     self.epsilon = start + t * (end - start)  # linear interpolation
 
     def load_images(self, sheet, steps):
         animation_list = []
@@ -137,7 +157,9 @@ class Fighter:
         dy = (self.rect.y - other.rect.y) / (self.screen_width / 2)
         h1 = self.health / 100.0
         h2 = other.health / 100.0
-        return np.array([dx, dy, h1, h2], dtype=np.float32)
+        vy = self.vel_y / 30.0
+        atk_cd = self.attack_cooldown / 20.0
+        return np.array([dx, dy, h1, h2, vy, atk_cd], dtype=np.float32)
 
     def select_action(self, state):
         if random.random() < self.epsilon:
@@ -179,7 +201,7 @@ class Fighter:
 
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=10.0)
         self.optimizer.step()
 
         # if self.epsilon > self.epsilon_min:
