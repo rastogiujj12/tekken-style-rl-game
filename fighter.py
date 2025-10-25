@@ -305,7 +305,7 @@ class Fighter:
                         else :
                             on_hit = 0.4
                     else:
-                        on_hit += -0.3
+                        on_hit = -0.3
 
                     reward_raw += on_hit
 

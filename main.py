@@ -321,7 +321,7 @@ while run:
             )
             
             # reset fighters
-            if PHASE==2:
+            if PHASE>1:
                 chosen_variant = random.choice(player1_variants)
                 checkpoint = torch.load(f"{PLAYER_1_MODEL_PATH}{chosen_variant}.pth", map_location=fighter_1.device)
                 fighter_1.policy_net.load_state_dict(checkpoint)
