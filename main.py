@@ -1,46 +1,57 @@
 # main.py
-import pygame, glob, imageio, random, torch, os, re, numpy as np
+import os
+# os.environ["SDL_VIDEODRIVER"] = "dummy" 
+import pygame, glob, imageio, random, torch, re, numpy as np
 from pygame import mixer
 from fighter import Fighter
 from logger import Logger
 
 mixer.init()
 pygame.init()
-PHASE = 2
+base_lr = 1e-4
+MODE = "train" # play, train or eval
+PHASE = 3
 
-PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
+if not MODE =="play":
+    PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
 
-if not PHASE ==1:
-    player1_variants = [x for x in range(0,1000,50)]
-    chosen_variant = random.choice(player1_variants)
-print("chosen_variant", chosen_variant)
+    if not PHASE ==1:
+        player1_variants = [x for x in range(0,1000,50)]
+        chosen_variant = random.choice(player1_variants)
+        print("chosen_variant", chosen_variant)
 
-SAVE_INTERVAL = 50
-TOTAL_EPISODES = 1000
+    SAVE_INTERVAL = 50
+    TOTAL_EPISODES = 1000
 
-# logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
-step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
-episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
-
-print(f"[INFO] Logging to {step_logger.path()}")
-
-#make folder structure
-os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
-os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
+    # logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
+    step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
+    episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
+    reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
 
 
-os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
-os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
+    print(f"[INFO] Logging to {step_logger.path()}")
 
-os.makedirs("recordings", exist_ok=True)
+    #make folder structure
+    os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
+    os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
+
+
+    os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
+    os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
+
+    os.makedirs("recordings", exist_ok=True)
 
 # create game window
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 600
 GROUND_HEIGHT = SCREEN_HEIGHT - 293
 
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Brawler")
+if MODE == "train":
+    flag = pygame.HIDDEN
+else:
+    flag = 0
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags=flag)
+pygame.display.set_caption("RL Fighting Game")
 
 clock = pygame.time.Clock()
 FPS = 60
@@ -68,11 +79,14 @@ WARRIOR_STEPS = [10, 8, 1, 7, 7, 3, 7]
 WIZARD_STEPS  = [8,  8, 1, 8, 8, 3, 7]
 
 # audio
-# pygame.mixer.music.load("assets/audio/music.mp3")
-# pygame.mixer.music.set_volume(0.5)
-# pygame.mixer.music.play(-1, 0.0, 5000)
 sword_fx = pygame.mixer.Sound("assets/audio/sword.wav");   sword_fx.set_volume(0.5)
 magic_fx = pygame.mixer.Sound("assets/audio/magic.wav");   magic_fx.set_volume(0.75)
+if MODE=="play":
+    pygame.mixer.music.load("assets/audio/music.mp3")
+    pygame.mixer.music.set_volume(0.5)
+    pygame.mixer.music.play(-1, 0.0, 5000)
+else:
+    pygame.mixer.quit()
 
 # graphics
 bg = pygame.image.load("assets/images/background/background.jpg").convert_alpha()
@@ -121,45 +135,53 @@ def get_latest_episode(pattern):
 
     return ep_num
 
-episodes_elapsed = get_latest_episode(f"weights/player_1/phase_{PHASE}/model/_ep_*.pth")
-print("episodes_elapsed", episodes_elapsed)
-if PHASE == 1:
-    chosen_variant = episodes_elapsed
-    # if episodes_elapsed >= TOTAL_EPISODES:
-    #     PHASE = 2
-
+if not MODE == "play":
+    episodes_elapsed = get_latest_episode(f"weights/player_1/phase_{PHASE}/model/_ep_*.pth")
+    print("episodes_elapsed", episodes_elapsed)
+    if PHASE == 1:
+        chosen_variant = episodes_elapsed
+        # if episodes_elapsed >= TOTAL_EPISODES:
+        #     PHASE = 2
+else:
+    episodes_elapsed = 0
 # Create two deep-RL fighters
 fighter_1 = Fighter(
     player=1,
     x=200, y=310, flip=False,
     data=WARRIOR_DATA, sprite_sheet=WARRIOR_SHEET, animation_steps=WARRIOR_STEPS,
     attack_sound=sword_fx, screen_width=SCREEN_WIDTH, 
-    role="player", training_phase = PHASE, continue_from_episode = chosen_variant
+    role="player", training_phase = PHASE, continue_from_episode = chosen_variant, mode=MODE
 )
 fighter_2 = Fighter(
     player=2,
     x=700, y=310, flip=True,
     data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
     attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    role="enemy", training_phase = PHASE, continue_from_episode = 1050
+    role="enemy", training_phase = PHASE, continue_from_episode = 1000, mode=MODE
 )
 
 if not PHASE == 1:
     fighter_1.epsilon = 0.0  # Fixed (opponent)
     fighter_2.epsilon_start = 1.0
-    step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
-    episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
-
-    print(f"[INFO] Phase 2 logging started: {step_logger.path()}")
-
     q1 = loss1 = 0
 
 run = True
 episode_step=0
 while run:
-    if episodes_elapsed>TOTAL_EPISODES:
+    if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
         run = False
     episode_step+=1
+
+    if PHASE==3:
+        #scale learning rate for phase 3
+        if episode_step < 150:
+            lr_scale = 0.2  # stabilize after reward change
+        elif episode_step < 400:
+            lr_scale = 0.5  # mid-phase adaptation
+        else:
+            lr_scale = 1.0
+        fighter_2.optimizer.param_groups[0]['lr'] *= lr_scale
+
     clock.tick(FPS)
     draw_bg()
     draw_health_bar(fighter_1.health, 20, 20)
@@ -182,6 +204,19 @@ while run:
         draw_text(f"{mins}:{secs:02d}", count_font, RED, SCREEN_WIDTH/2-40, 10)
 
         # agents move, learn, and draw themselves
+        # if MODE=="play":
+        #     keys = pygame.key.get_pressed()
+        #     action_p1 = [0, 0, 0, 0]  # [left, right, jump, attack]
+
+        #     if keys[pygame.K_a]:
+        #         action_p1[0] = 1  # move left
+        #     if keys[pygame.K_d]:
+        #         action_p1[1] = 1  # move right
+        #     if keys[pygame.K_w]:
+        #         action_p1[2] = 1  # jump
+        #     if keys[pygame.K_j]:
+        #         action_p1[3] = 1  # attack
+        # else:
         fighter_1.move(fighter_2, round_over, elapsed)
         fighter_2.move(fighter_1, round_over, elapsed)
 
@@ -216,6 +251,7 @@ while run:
                     eps_p2=round(fighter_2.epsilon, 3),
                     reward_p1=getattr(fighter_1, "episode_reward", 0.0),
                     reward_p2=getattr(fighter_2, "episode_reward", 0.0),
+                    lr=fighter_2.optimizer.param_groups[0]['lr'],
                     opponent_ep =chosen_variant,
                 )            
 
@@ -274,7 +310,8 @@ while run:
                 score_p1=score[0],
                 score_p2=score[1],
                 opponent_ep = chosen_variant,
-                episode_step = episode_step
+                episode_step = episode_step,
+                lr = fighter_2.optimizer.param_groups[0]['lr']
             )
             
             # reset fighters
@@ -284,6 +321,19 @@ while run:
                 fighter_1.policy_net.load_state_dict(checkpoint)
                 fighter_1.target_net.load_state_dict(checkpoint)
                 print(f"[INFO] Loaded Fighter weights from {chosen_variant}")
+            
+            components = fighter_2.debug_last_reward
+            
+            reward_logger.log(
+                episode = fighter_2.current_episode,
+                raw_total = components["raw_total"],
+                after_scale = components["after_scale"],
+                balance = components["balance"],
+                duration = components["duration"],
+                on_hit = components["on_hit"],
+                episode_reward = fighter_2.episode_reward,
+            )
+
             episode_step=0
             fighter_1.reset()
             fighter_2.reset()
