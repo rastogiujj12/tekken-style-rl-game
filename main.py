@@ -12,34 +12,35 @@ base_lr = 1e-4
 MODE = "train" # play, train or eval
 PHASE = 3
 
-if not MODE =="play":
-    PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
+SAVE_INTERVAL = 50
+TOTAL_EPISODES = 1000
 
-    if not PHASE ==1:
-        player1_variants = [x for x in range(0,1000,50)]
-        chosen_variant = random.choice(player1_variants)
-        print("chosen_variant", chosen_variant)
+# if not MODE =="play":
+PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
 
-    SAVE_INTERVAL = 50
-    TOTAL_EPISODES = 1000
-
-    # logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
-    step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
-    episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
-    reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
+if not PHASE ==1:
+    player1_variants = [x for x in range(0,1000,50)]
+    chosen_variant = random.choice(player1_variants)
+    print("chosen_variant", chosen_variant)
 
 
-    print(f"[INFO] Logging to {step_logger.path()}")
+# logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
+step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
+episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
+reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
 
-    #make folder structure
-    os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
-    os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
+
+print(f"[INFO] Logging to {step_logger.path()}")
+
+#make folder structure
+os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
 
 
-    os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
-    os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
+os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
 
-    os.makedirs("recordings", exist_ok=True)
+os.makedirs("recordings", exist_ok=True)
 
 # create game window
 SCREEN_WIDTH = 1000
@@ -143,6 +144,7 @@ if not MODE == "play":
         # if episodes_elapsed >= TOTAL_EPISODES:
         #     PHASE = 2
 else:
+    chosen_variant = 0
     episodes_elapsed = 0
 # Create two deep-RL fighters
 fighter_1 = Fighter(
@@ -167,20 +169,23 @@ if not PHASE == 1:
 
 run = True
 episode_step=0
+def set_learning_rate(fighter_2):
+    lr_scale = 1
+    #scale learning rate for phase 3
+    if episodes_elapsed < 150:
+        lr_scale = 0.2  # stabilize after reward change
+    elif episodes_elapsed < 400:
+        lr_scale = 0.5  # mid-phase adaptation
+    else:
+        lr_scale = 1.0
+    fighter_2.optimizer.param_groups[0]['lr'] *= lr_scale
+
+if PHASE==3:
+    set_learning_rate(fighter_2)
 while run:
     if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
         run = False
     episode_step+=1
-
-    if PHASE==3:
-        #scale learning rate for phase 3
-        if episode_step < 150:
-            lr_scale = 0.2  # stabilize after reward change
-        elif episode_step < 400:
-            lr_scale = 0.5  # mid-phase adaptation
-        else:
-            lr_scale = 1.0
-        fighter_2.optimizer.param_groups[0]['lr'] *= lr_scale
 
     clock.tick(FPS)
     draw_bg()
@@ -333,6 +338,9 @@ while run:
                 on_hit = components["on_hit"],
                 episode_reward = fighter_2.episode_reward,
             )
+
+            if PHASE==3:
+                set_learning_rate(fighter_2)
 
             episode_step=0
             fighter_1.reset()

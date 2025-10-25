@@ -91,11 +91,11 @@ class Fighter:
 
         # if continue_from_episode>0:
         if self.role=="enemy":
-            npc_model_path = f"weights/player_2/phase_1/model/_ep_{continue_from_episode}.pth"
-            npc_optim_path = f"weights/player_2/phase_1/optimizer/_ep_{continue_from_episode}.pth"
+            npc_model_path = f"weights/player_2/phase_2/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_2/phase_2/optimizer/_ep_{continue_from_episode}.pth"
         else: 
-            npc_model_path = f"weights/player_1/phase_2/model/_ep_{continue_from_episode}.pth"
-            npc_optim_path = f"weights/player_1/phase_2/optimizer/_ep_{continue_from_episode}.pth"
+            npc_model_path = f"weights/player_1/phase_1/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_1/phase_1/optimizer/_ep_{continue_from_episode}.pth"
 
         print("path", npc_model_path, npc_optim_path)
 
@@ -316,7 +316,7 @@ class Fighter:
                         else:
                             reward_raw -= 2.0  # penalize boring / one-sided finishes
                     
-                    scale *= 5
+                    scale = 5
                     # reward = max(-5.0, min(reward, 5.0))
                     reward = reward_raw / (1 + abs(reward*scale) / 5.0)
                     self.episode_reward += reward
