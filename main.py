@@ -172,13 +172,14 @@ episode_step=0
 def set_learning_rate(fighter_2):
     lr_scale = 1
     #scale learning rate for phase 3
-    if episodes_elapsed < 150:
-        lr_scale = 0.2  # stabilize after reward change
-    elif episodes_elapsed < 400:
-        lr_scale = 0.5  # mid-phase adaptation
+    if episodes_elapsed < 50:
+        lr_scale = 0.5  # stabilize after reward change
+    elif episodes_elapsed < 150:
+        lr_scale = base_lr  # mid-phase adaptation
     else:
-        lr_scale = 1.0
-    fighter_2.optimizer.param_groups[0]['lr'] *= lr_scale
+        lr_scale = 0.7
+    for g in fighter_2.optimizer.param_groups:
+        g['lr'] = base_lr * lr_scale
 
 if PHASE==3:
     set_learning_rate(fighter_2)
@@ -327,17 +328,18 @@ while run:
                 fighter_1.target_net.load_state_dict(checkpoint)
                 print(f"[INFO] Loaded Fighter weights from {chosen_variant}")
             
-            components = fighter_2.debug_last_reward
-            
-            reward_logger.log(
-                episode = fighter_2.current_episode,
-                raw_total = components["raw_total"],
-                after_scale = components["after_scale"],
-                balance = components["balance"],
-                duration = components["duration"],
-                on_hit = components["on_hit"],
-                episode_reward = fighter_2.episode_reward,
-            )
+            if(fighter_2.debug_last_reward is not None):
+                components = fighter_2.debug_last_reward
+                
+                reward_logger.log(
+                    episode = fighter_2.current_episode,
+                    raw_total = components["raw_total"],
+                    after_scale = components["after_scale"],
+                    balance = components["balance"],
+                    duration = components["duration"],
+                    on_hit = components["on_hit"],
+                    episode_reward = fighter_2.episode_reward,
+                )
 
             if PHASE==3:
                 set_learning_rate(fighter_2)

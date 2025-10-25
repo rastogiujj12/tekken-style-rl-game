@@ -271,31 +271,31 @@ class Fighter:
                 rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
                         if not self.flip else
                         pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
-                if rect.colliderect(other.rect):
-                    other.health -= 10/3
-                    self.attack_cooldown = 20
+                
+                other.health -= 10/3
+                self.attack_cooldown = 20
 
-                    # reward
-                    # 1. Distance shaping
-                    new_dx = abs(self.rect.x - other.rect.x)
-                    shaping = (prev_dx - new_dx) * 2  # small positive if you moved closer
-                    reward_raw = shaping
+                # reward
+                # 1. Distance shaping
+                new_dx = abs(self.rect.x - other.rect.x)
+                shaping = (prev_dx - new_dx) * 2  # small positive if you moved closer
+                reward_raw = shaping
 
 
-                    if not self.training_phase == 1:
-                        # 2. Duration reward
-                        target_time = 60.0
-                        sigma = 15.0  # spread in seconds
-                        # Gaussian peak around 60s, baseline negative to discourage too-short fights
-                        duration_reward = 1.0 * np.exp(-((elapsed - target_time) ** 2) / (2 * sigma ** 2)) - 0.3
-                        reward_raw += duration_reward
+                if not self.training_phase == 1:
+                    # 2. Duration reward
+                    target_time = 60.0
+                    sigma = 15.0  # spread in seconds
+                    # Gaussian peak around 60s, baseline negative to discourage too-short fights
+                    duration_reward = 1.0 * np.exp(-((elapsed - target_time) ** 2) / (2 * sigma ** 2)) - 0.3
+                    reward_raw += duration_reward
 
-                        # 3. Balance reward (punish one-sided health gaps)
-                        health_diff = abs(self.health - other.health) / 100.0
-                        # quadratic penalty gives stronger gradient near small diffs
-                        balance_reward = 2.0 * (1 - (health_diff / 0.5) ** 2)
-                        balance_reward = np.clip(balance_reward, -1.0, 1.0)
-                        reward_raw += balance_reward
+                    # 3. Balance reward (punish one-sided health gaps)
+                    health_diff = abs(self.health - other.health) / 100.0
+                    # quadratic penalty gives stronger gradient near small diffs
+                    balance_reward = 2.0 * (1 - (health_diff / 0.5) ** 2)
+                    balance_reward = np.clip(balance_reward, -1.0, 1.0)
+                    reward_raw += balance_reward
 
                     if rect.colliderect(other.rect):
                         other.health -= 10/3
