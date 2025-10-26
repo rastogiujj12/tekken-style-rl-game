@@ -175,7 +175,7 @@ def set_learning_rate(fighter_2):
     if episodes_elapsed < 50:
         lr_scale = 0.5  # stabilize after reward change
     elif episodes_elapsed < 150:
-        lr_scale = base_lr  # mid-phase adaptation
+        lr_scale = 1  # mid-phase adaptation
     else:
         lr_scale = 0.7
     for g in fighter_2.optimizer.param_groups:

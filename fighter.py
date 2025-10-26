@@ -318,7 +318,7 @@ class Fighter:
                     
                     scale = 5
                     # reward = max(-5.0, min(reward, 5.0))
-                    reward = reward_raw / (1 + abs(reward*scale) / 5.0)
+                    reward = reward_raw / (1 + abs(reward_raw *scale) / 5.0)
                     self.episode_reward += reward
                     self.attack_cooldown = 20
 
