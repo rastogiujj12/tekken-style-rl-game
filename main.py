@@ -9,7 +9,7 @@ from logger import Logger
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "train" # play, train or eval
+MODE = "play" # play, train or eval
 PHASE = 3
 
 SAVE_INTERVAL = 50

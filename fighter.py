@@ -272,7 +272,7 @@ class Fighter:
                         if not self.flip else
                         pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
                 
-                other.health -= 10/3
+                # other.health -= 10/3
                 self.attack_cooldown = 20
 
                 # reward
