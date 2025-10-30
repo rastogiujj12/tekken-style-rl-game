@@ -258,7 +258,6 @@ class Fighter:
         # ---------------------------
         else:
             action = self.select_action(state)
-            action = self.select_action(state)
             if action == 0:
                 dx = -SPEED
             elif action == 1:
@@ -297,40 +296,40 @@ class Fighter:
                     balance_reward = np.clip(balance_reward, -1.0, 1.0)
                     reward_raw += balance_reward
 
-                    if rect.colliderect(other.rect):
-                        other.health -= 10/3
+                if rect.colliderect(other.rect):
+                    other.health -= 10/3
 
-                        if self.training_phase==1 or self.role == "player":
-                            on_hit = 1.0
-                        else :
-                            on_hit = 0.4
+                    if self.training_phase==1 or self.role == "player":
+                        on_hit = 1.0
+                    else :
+                        on_hit = 0.4
+                else:
+                    on_hit = -0.3
+
+                reward_raw += on_hit
+
+                # 5. Terminal bonus (encourage 55–65 s balanced fights)
+                if self.health <= 0 or other.health <= 0:
+                    if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
+                        reward_raw += 5.0
                     else:
-                        on_hit = -0.3
+                        reward_raw -= 2.0  # penalize boring / one-sided finishes
+                
+                scale = 5
+                # reward = max(-5.0, min(reward, 5.0))
+                reward = reward_raw / (1 + abs(reward_raw *scale) / 5.0)
+                self.episode_reward += reward
+                self.attack_cooldown = 20
 
-                    reward_raw += on_hit
-
-                    # 5. Terminal bonus (encourage 55–65 s balanced fights)
-                    if self.health <= 0 or other.health <= 0:
-                        if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
-                            reward_raw += 5.0
-                        else:
-                            reward_raw -= 2.0  # penalize boring / one-sided finishes
-                    
-                    scale = 5
-                    # reward = max(-5.0, min(reward, 5.0))
-                    reward = reward_raw / (1 + abs(reward_raw *scale) / 5.0)
-                    self.episode_reward += reward
-                    self.attack_cooldown = 20
-
-                    # store debugging info (inspect these logs to tune coefficients)
-                    self.debug_last_reward = {
-                        "raw_total": float(reward_raw),
-                        "after_scale": float(reward),
-                        "balance": float(balance_reward),
-                        "duration": float(duration_reward),
-                        "shaping": float(shaping),
-                        "on_hit": float(on_hit),
-                    }
+                # store debugging info (inspect these logs to tune coefficients)
+                self.debug_last_reward = {
+                    "raw_total": float(reward_raw),
+                    "after_scale": float(reward),
+                    "health_diff_reward": float(balance_reward),
+                    "duration_reward": float(duration_reward),
+                    "shaping": float(shaping),
+                    "on_hit": float(on_hit),
+                }
 
 
         # block overlap

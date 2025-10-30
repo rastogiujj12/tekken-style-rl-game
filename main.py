@@ -9,7 +9,7 @@ from logger import Logger
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "play" # play, train or eval
+MODE = "train" # play, train or eval
 PHASE = 3
 
 SAVE_INTERVAL = 50
@@ -335,8 +335,8 @@ while run:
                     episode = fighter_2.current_episode,
                     raw_total = components["raw_total"],
                     after_scale = components["after_scale"],
-                    balance = components["balance"],
-                    duration = components["duration"],
+                    health_diff_reward = components["health_diff_reward"],
+                    duration_reward = components["duration_reward"],
                     on_hit = components["on_hit"],
                     episode_reward = fighter_2.episode_reward,
                 )
