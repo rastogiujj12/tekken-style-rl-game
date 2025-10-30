@@ -286,13 +286,13 @@ class Fighter:
                     target_time = 60.0
                     sigma = 15.0  # spread in seconds
                     # Gaussian peak around 60s, baseline negative to discourage too-short fights
-                    duration_reward = 1.0 * np.exp(-((elapsed - target_time) ** 2) / (2 * sigma ** 2)) - 0.3
+                    duration_reward = 1.0 * np.exp(-((elapsed - target_time) ** 2) / (2 * sigma ** 2)) - 0.5
                     reward_raw += duration_reward
 
                     # 3. Balance reward (punish one-sided health gaps)
                     health_diff = abs(self.health - other.health) / 100.0
                     # quadratic penalty gives stronger gradient near small diffs
-                    balance_reward = 2.0 * (1 - (health_diff / 0.5) ** 2)
+                    balance_reward = 2.0 * (1 - (health_diff / 0.3) ** 2)
                     balance_reward = np.clip(balance_reward, -1.0, 1.0)
                     reward_raw += balance_reward
 
@@ -301,8 +301,6 @@ class Fighter:
 
                     if self.training_phase==1 or self.role == "player":
                         on_hit = 1.0
-                    else :
-                        on_hit = 0.4
                 else:
                     on_hit = -0.3
 
@@ -321,15 +319,15 @@ class Fighter:
                 self.episode_reward += reward
                 self.attack_cooldown = 20
 
-                # store debugging info (inspect these logs to tune coefficients)
-                self.debug_last_reward = {
-                    "raw_total": float(reward_raw),
-                    "after_scale": float(reward),
-                    "health_diff_reward": float(balance_reward),
-                    "duration_reward": float(duration_reward),
-                    "shaping": float(shaping),
-                    "on_hit": float(on_hit),
-                }
+            # store debugging info (inspect these logs to tune coefficients)
+            self.debug_last_reward = {
+                "raw_total": float(reward_raw),
+                "after_scale": float(reward),
+                "health_diff_reward": float(balance_reward),
+                "duration_reward": float(duration_reward),
+                "shaping": float(shaping),
+                "on_hit": float(on_hit),
+            }
 
 
         # block overlap
