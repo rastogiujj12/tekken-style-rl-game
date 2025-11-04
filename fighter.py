@@ -296,6 +296,7 @@ class Fighter:
                     balance_reward = np.clip(balance_reward, -1.0, 1.0)
                     reward_raw += balance_reward
 
+                on_hit = 0
                 if rect.colliderect(other.rect):
                     other.health -= 10/3
 
@@ -303,7 +304,7 @@ class Fighter:
                         on_hit = 1.0
                 else:
                     on_hit = -0.3
-
+                
                 reward_raw += on_hit
 
                 # 5. Terminal bonus (encourage 55–65 s balanced fights)
@@ -319,15 +320,15 @@ class Fighter:
                 self.episode_reward += reward
                 self.attack_cooldown = 20
 
-            # store debugging info (inspect these logs to tune coefficients)
-            self.debug_last_reward = {
-                "raw_total": float(reward_raw),
-                "after_scale": float(reward),
-                "health_diff_reward": float(balance_reward),
-                "duration_reward": float(duration_reward),
-                "shaping": float(shaping),
-                "on_hit": float(on_hit),
-            }
+                # store debugging info (inspect these logs to tune coefficients)
+                self.debug_last_reward = {
+                    "raw_total": float(reward_raw),
+                    "after_scale": float(reward),
+                    "health_diff_reward": float(balance_reward),
+                    "duration_reward": float(duration_reward),
+                    "shaping": float(shaping),
+                    "on_hit": float(on_hit),
+                }
 
 
         # block overlap

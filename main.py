@@ -10,7 +10,7 @@ mixer.init()
 pygame.init()
 base_lr = 1e-4
 MODE = "play" # play, train or eval
-PHASE = 3
+PHASE = 4
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 1000
