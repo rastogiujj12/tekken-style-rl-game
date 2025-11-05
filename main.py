@@ -32,7 +32,7 @@ if not PHASE ==1:
 step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
 episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
 reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
-
+win_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_win")
 
 print(f"[INFO] Logging to {step_logger.path()}")
 
@@ -187,6 +187,10 @@ def set_learning_rate(fighter_2):
 
 if PHASE==3:
     set_learning_rate(fighter_2)
+
+p1_win_rate = 0.5
+p2_win_rate = 0.5
+
 while run:
     if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
         run = False
@@ -313,10 +317,12 @@ while run:
                 score[1] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
+                fighter_2.win+=1
             elif not fighter_2.alive:
                 score[0] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
+                fighter_1.win+=1
 
         if rem <= 0 or (round_over and pygame.time.get_ticks()-round_over_time > ROUND_OVER_COOLDOWN):
             round_over = False
@@ -342,6 +348,19 @@ while run:
                         f"weights/player_2/phase_{PHASE}/model/_ep_{episodes_elapsed}.pth")
                 torch.save(fighter_2.optimizer.state_dict(), 
                             f"weights/player_2/phase_{PHASE}/optimizer/_ep_{episodes_elapsed}.pth")
+
+            if episodes_elapsed % 100 == 0 and episodes_elapsed > 0:
+                total_games = fighter_1.wins + fighter_2.wins + fighter_1.draws
+                win_rate_1 = fighter_1.wins / total_games if total_games > 0 else 0
+                win_rate_2 = fighter_2.wins / total_games if total_games > 0 else 0
+                win_logger.log(
+                    episode = episodes_elapsed, 
+                    p1_win_rate = win_rate_1,
+                    p2_win_rate = win_rate_2
+                )
+            
+            # reset for next window
+            fighter_1.wins = fighter_2.wins = fighter_1.draws = fighter_2.draws = 0
 
             print(f"episode {episodes_elapsed} over, score: {score}")
             episodes_elapsed +=1
@@ -372,7 +391,21 @@ while run:
             
             # reset fighters
             if PHASE>1:
-                chosen_variant = random.choice(player1_variants)
+                # chosen_variant = random.choice(player1_variants)
+                # choosing player 1 variant
+                if p2_win_rate > 0.7:
+                    # NPC too strong → fight weaker Player 1s
+                    weights = np.linspace(1.0, 0.1, len(player1_variants))
+                elif p2_win_rate < 0.3:
+                    # NPC too weak → fight weaker Player 1s (to rebuild)
+                    weights = np.linspace(0.3, 1.0, len(player1_variants))
+                else:
+                    # balanced → moderate distribution
+                    weights = np.ones(len(player1_variants))
+
+                weights /= np.sum(weights)
+                chosen_variant = random.choices(player1_variants, weights=weights)[0]
+
                 checkpoint = torch.load(f"{PLAYER_1_MODEL_PATH}{chosen_variant}.pth", map_location=fighter_1.device)
                 fighter_1.policy_net.load_state_dict(checkpoint)
                 fighter_1.target_net.load_state_dict(checkpoint)

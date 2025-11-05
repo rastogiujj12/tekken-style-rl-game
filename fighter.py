@@ -111,6 +111,8 @@ class Fighter:
         self.screen_width  = screen_width
         self.episode_reward = 0.0
         self.mode = mode
+        self.win = 0
+        self.smoothed_reward = 0.0
 
         # differentiate roles
         self.role = role
@@ -382,9 +384,16 @@ class Fighter:
                 # 2. Attack result
                 if rect.colliderect(other.rect):
                     other.health -= 10 / 3
-                    reward += 1.0
+                    if self.training_phase==1:
+                        reward += 1.0
+                    else:
+                        reward += 0.3
                 else:
-                    reward -= 0.5  # stronger penalty for missing
+                    if action in (3, 4):
+                        if new_dx < 80:
+                            reward += 0.1
+                        else:  
+                            reward -= 0.5  # stronger penalty for missing
 
                 
                 if not self.training_phase == 1:
@@ -406,7 +415,8 @@ class Fighter:
                             reward -= 3.0
 
                 # 6. Clamp and accumulate
-                reward = np.clip(reward, -3.0, 3.0)
+                self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
+                reward = np.clip(self.smoothed_reward, -5.0, 5.0)
                 self.episode_reward += reward
 
                 # store debugging info (inspect these logs to tune coefficients)
@@ -438,7 +448,7 @@ class Fighter:
             pass
         else:
             # self.update_action(action)
-            self.remember(state, action, reward, next_state, done)
+            self.remember(state, action, self.smoothed_reward, next_state, done)
         
 
         self.step_count += 1
