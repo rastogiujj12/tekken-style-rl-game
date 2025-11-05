@@ -6,11 +6,15 @@ from pygame import mixer
 from fighter import Fighter
 from logger import Logger
 
+np.random.seed(0); 
+random.seed(0); 
+torch.manual_seed(0)
+
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "play" # play, train or eval
-PHASE = 3
+MODE = "train" # play, train or eval
+PHASE = 1
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 1000
@@ -229,10 +233,28 @@ while run:
         if PHASE==1:
             loss1, q1 = fighter_1.optimize()
             loss2, q2 = fighter_2.optimize()
-            if (loss1 is not None or loss2 is not None) and fighter_1.step_count % 500 == 0:
+            if (loss1 is not None or loss2 is not None) and fighter_1.step_count % 50 == 0:
+                 # --- gradient norms ---
+                grad_norm_p1 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_1.policy_net.parameters() if p.grad is not None)) ** 0.5
+                grad_norm_p2 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_2.policy_net.parameters() if p.grad is not None)) ** 0.5
+
+                # --- input normalization stats ---
+                if hasattr(fighter_1, "_rms"):
+                    rms_mean_p1 = float(fighter_1._rms.mean.mean())
+                    rms_std_p1  = float(np.sqrt(fighter_1._rms.var.mean()))
+                else:
+                    rms_mean_p1, rms_std_p1 = 0.0, 1.0
+
+                if hasattr(fighter_2, "_rms"):
+                    rms_mean_p2 = float(fighter_2._rms.mean.mean())
+                    rms_std_p2  = float(np.sqrt(fighter_2._rms.var.mean()))
+                else:
+                    rms_mean_p2, rms_std_p2 = 0.0, 1.0
+                            
+                # --- log everything ---
                 step_logger.log(
                     episode=episodes_elapsed,
-                    elapsed_time = elapsed,
+                    elapsed_time=elapsed,
                     step=fighter_1.step_count,
                     loss_p1=loss1 or 0.0,
                     loss_p2=loss2 or 0.0,
@@ -241,14 +263,31 @@ while run:
                     eps_p1=round(fighter_1.epsilon, 3),
                     eps_p2=round(fighter_2.epsilon, 3),
                     reward_p1=getattr(fighter_1, "episode_reward", 0.0),
-                    reward_p2=getattr(fighter_2, "episode_reward", 0.0)
+                    reward_p2=getattr(fighter_2, "episode_reward", 0.0),
+                    grad_norm_p1=grad_norm_p1,
+                    grad_norm_p2=grad_norm_p2,
+                    rms_mean_p1=rms_mean_p1,
+                    rms_std_p1=rms_std_p1,
+                    rms_mean_p2=rms_mean_p2,
+                    rms_std_p2=rms_std_p2
                 )
         else:
             loss2, q2 = fighter_2.optimize()
             if loss2 is not None and fighter_1.step_count % 500 == 0:
+                 # --- gradient norm (for fighter_2 only) ---
+                grad_norm_p2 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_2.policy_net.parameters() if p.grad is not None)) ** 0.5
+
+                # --- input normalization stats ---
+                if hasattr(fighter_2, "_rms"):
+                    rms_mean_p2 = float(fighter_2._rms.mean.mean())
+                    rms_std_p2  = float(np.sqrt(fighter_2._rms.var.mean()))
+                else:
+                    rms_mean_p2, rms_std_p2 = 0.0, 1.0
+
+                 # --- main logging ---
                 step_logger.log(
                     episode=episodes_elapsed,
-                    episode_step = episode_step,
+                    episode_step=episode_step,
                     loss_p1=0.0,
                     loss_p2=loss2 or 0.0,
                     q_p1=0.0,
@@ -258,7 +297,10 @@ while run:
                     reward_p1=getattr(fighter_1, "episode_reward", 0.0),
                     reward_p2=getattr(fighter_2, "episode_reward", 0.0),
                     lr=fighter_2.optimizer.param_groups[0]['lr'],
-                    opponent_ep =chosen_variant,
+                    opponent_ep=chosen_variant,
+                    grad_norm_p2=grad_norm_p2,
+                    rms_mean_p2=rms_mean_p2,
+                    rms_std_p2=rms_std_p2
                 )            
 
         fighter_1.update()
@@ -309,15 +351,23 @@ while run:
             fighter_1.anneal_epsilon()
             fighter_2.anneal_epsilon()
 
+            avg_reward_p1 = fighter_1.episode_reward / max(1, episode_step)
+            avg_reward_p2 = fighter_2.episode_reward / max(1, episode_step)
+
+            avg_duration = episode_step
+
             episode_logger.log(
                 episode=episodes_elapsed,
                 epsilon_p1=round(fighter_1.epsilon, 3),
                 epsilon_p2=round(fighter_2.epsilon, 3),
                 score_p1=score[0],
                 score_p2=score[1],
-                opponent_ep = chosen_variant,
-                episode_step = episode_step,
-                lr = fighter_2.optimizer.param_groups[0]['lr']
+                avg_duration=avg_duration,
+                avg_reward_p1=fighter_1.episode_reward / max(1, episode_step),
+                avg_reward_p2=fighter_2.episode_reward / max(1, episode_step),
+                opponent_ep=chosen_variant,
+                episode_step=episode_step,
+                lr=fighter_2.optimizer.param_groups[0]['lr']
             )
             
             # reset fighters
@@ -328,17 +378,13 @@ while run:
                 fighter_1.target_net.load_state_dict(checkpoint)
                 print(f"[INFO] Loaded Fighter weights from {chosen_variant}")
             
-            if(fighter_2.debug_last_reward is not None):
-                components = fighter_2.debug_last_reward
-                
-                reward_logger.log(
-                    episode = fighter_2.current_episode,
-                    raw_total = components["raw_total"],
-                    after_scale = components["after_scale"],
-                    health_diff_reward = components["health_diff_reward"],
-                    duration_reward = components["duration_reward"],
-                    on_hit = components["on_hit"],
-                    episode_reward = fighter_2.episode_reward,
+
+            if hasattr(fighter_2, "debug_last_reward"):
+                dbg = fighter_2.debug_last_reward
+                step_logger.log(
+                    episode=episodes_elapsed,
+                    step=fighter_1.step_count,
+                    **{f"dbg2_{k}": v for k, v in dbg.items()}
                 )
 
             if PHASE==3:
