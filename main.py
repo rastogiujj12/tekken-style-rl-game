@@ -55,6 +55,7 @@ if MODE == "train":
     flag = pygame.HIDDEN
 else:
     flag = 0
+# flag=0
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags=flag)
 pygame.display.set_caption("RL Fighting Game")
 
