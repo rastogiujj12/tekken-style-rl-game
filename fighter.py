@@ -111,7 +111,7 @@ class Fighter:
         self.screen_width  = screen_width
         self.episode_reward = 0.0
         self.mode = mode
-        self.win = 0
+        self.wins = 0
         self.smoothed_reward = 0.0
 
         # differentiate roles

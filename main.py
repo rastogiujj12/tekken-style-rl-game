@@ -14,7 +14,7 @@ mixer.init()
 pygame.init()
 base_lr = 1e-4
 MODE = "train" # play, train or eval
-PHASE = 1
+PHASE = 2
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 1000
@@ -415,7 +415,7 @@ while run:
 
             if hasattr(fighter_2, "debug_last_reward"):
                 dbg = fighter_2.debug_last_reward
-                step_logger.log(
+                reward_logger.log(
                     episode=episodes_elapsed,
                     step=fighter_1.step_count,
                     **{f"dbg2_{k}": v for k, v in dbg.items()}
