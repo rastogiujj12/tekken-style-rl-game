@@ -17,7 +17,7 @@ MODE = "train" # play, train or eval
 PHASE = 2
 
 SAVE_INTERVAL = 50
-TOTAL_EPISODES = 1000
+TOTAL_EPISODES = 300
 
 # if not MODE =="play":
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
@@ -169,7 +169,7 @@ fighter_2 = Fighter(
 
 if not PHASE == 1:
     fighter_1.epsilon = 0.0  # Fixed (opponent)
-    fighter_2.epsilon_start = 1.0
+    # fighter_2.epsilon_start = 1.0
     q1 = loss1 = 0
 
 run = True
