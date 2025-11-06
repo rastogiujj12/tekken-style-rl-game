@@ -125,11 +125,12 @@ class Fighter:
         self.gamma             = 0.99
         self.batch_size        = 64
         self.lr                = 1e-4
-        self.epsilon           = 1.0
+        # self.epsilon           = 1.0
+        self.epsilon  = 0.3
         self.epsilon_min       = 0.1
         self.epsilon_decay     = 0.9995
         self.epsilon_linear_end = 0.05
-        self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
+        self.epsilon_anneal_episodes = 200  # reach final eps by N episodes
         self.current_episode = 0
         self.memory            = deque(maxlen=100000)
         self.train_start       = 2000
@@ -150,8 +151,8 @@ class Fighter:
         npc_optim_path = None
 
         if self.role == "enemy":
-            npc_model_path = f"weights/player_2/phase_2/model/_ep_{continue_from_episode}.pth"
-            npc_optim_path = f"weights/player_2/phase_2/optimizer/_ep_{continue_from_episode}.pth"
+            npc_model_path = f"weights/player_2/phase_{self.training_phase-1}/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_2/phase_{self.training_phase-1}/optimizer/_ep_{continue_from_episode}.pth"
         else:
             npc_model_path = f"weights/player_1/phase_1/model/_ep_{continue_from_episode}.pth"
             npc_optim_path = f"weights/player_1/phase_1/optimizer/_ep_{continue_from_episode}.pth"
