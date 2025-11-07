@@ -14,10 +14,10 @@ mixer.init()
 pygame.init()
 base_lr = 1e-4
 MODE = "train" # play, train or eval
-PHASE = 2
+PHASE = 1
 
 SAVE_INTERVAL = 50
-TOTAL_EPISODES = 1000
+TOTAL_EPISODES = 2000
 
 # if not MODE =="play":
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
@@ -174,23 +174,14 @@ if not PHASE == 1:
 
 run = True
 episode_step=0
-def set_learning_rate(fighter_2):
-    lr_scale = 1
-    #scale learning rate for phase 3
-    if episodes_elapsed < 50:
-        lr_scale = 0.5  # stabilize after reward change
-    elif episodes_elapsed < 150:
-        lr_scale = 1  # mid-phase adaptation
-    else:
-        lr_scale = 0.7
-    for g in fighter_2.optimizer.param_groups:
-        g['lr'] = base_lr * lr_scale
 
-if PHASE==3:
-    set_learning_rate(fighter_2)
+def set_learning_rate(PHASE, episodes, fighter):
+    if PHASE == 2 and episodes>1000:
+        fighter.lr = 5e-5
+    elif PHASE == 3:
+        fighter.lr = 5e-5
+    
 
-p1_win_rate = 0.5
-p2_win_rate = 0.5
 
 while run:
     if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
@@ -421,8 +412,8 @@ while run:
                     **{f"dbg2_{k}": v for k, v in dbg.items()}
                 )
 
-            if PHASE==3:
-                set_learning_rate(fighter_2)
+            if PHASE>1:
+                set_learning_rate(PHASE, episodes_elapsed, fighter_2)
 
             episode_step=0
             fighter_1.reset()

@@ -641,8 +641,8 @@ class Fighter:
         # 2. Movement direction – backing off after opponent attack = okay
         if prev_dx is not None:
             move_toward = (prev_dx - new_dx) / 10.0
-            reward += np.clip(move_toward, -0.3, 0.3)
-            debug["move_toward"] = float(np.clip(move_toward, -0.3, 0.3))
+            reward += np.clip(move_toward, -0.2, 0.2)
+            debug["move_toward"] = float(np.clip(move_toward, -0.2, 0.2))
 
         # 3. Attack behaviour – success, restraint, or tactical retreat
         if action in (3, 4) and self.attack_cooldown == 19:
@@ -663,27 +663,28 @@ class Fighter:
         debug["balance_penalty"] = float(balance_penalty)
 
         # 5. Mercy / taunt behaviour – small reward if leading but holding back
-        if self.health > other.health and new_dx > optimal_min and self.attack_cooldown > 0:
+        # if self.health > other.health and new_dx > optimal_min and self.attack_cooldown > 0:
+        if self.health > other.health and balance_penalty < -0.2:
             reward += 0.1  # light reward for not pressing advantage too hard
             debug["mercy"] = 0.1
 
         # 6. Duration shaping – prefer medium-length fights (not too short/long)
         target, sigma = 60.0, 20.0
         duration_bonus = np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
-        reward += duration_bonus
-        debug["duration"] = float(duration_bonus)
+        reward += 1.5 * duration_bonus
+        debug["duration"] = float(1.5 * duration_bonus)
 
         # 7. Terminal conditions
         if self.health <= 0 or other.health <= 0:
             if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
-                terminal = 3.0
+                terminal = 1.5
             else:
-                terminal = -3.0
+                terminal = -1.5
             reward += terminal
             debug["terminal"] = float(terminal)
 
         # Final smoothing & clipping
-        reward = np.clip(reward, -5.0, 5.0)
+        # reward = np.clip(reward, -5.0, 5.0)
         debug["reward_total"] = float(reward)
 
         return reward, debug
