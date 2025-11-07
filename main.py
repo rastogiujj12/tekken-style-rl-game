@@ -17,7 +17,7 @@ MODE = "train" # play, train or eval
 PHASE = 2
 
 SAVE_INTERVAL = 50
-TOTAL_EPISODES = 300
+TOTAL_EPISODES = 1000
 
 # if not MODE =="play":
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
@@ -318,12 +318,12 @@ while run:
                 score[1] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
-                fighter_2.win+=1
+                fighter_2.wins+=1
             elif not fighter_2.alive:
                 score[0] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
-                fighter_1.win+=1
+                fighter_1.wins+=1
 
         if rem <= 0 or (round_over and pygame.time.get_ticks()-round_over_time > ROUND_OVER_COOLDOWN):
             round_over = False
