@@ -310,7 +310,7 @@ class Fighter:
         return float(loss.item()), avg_q_pred
 
 
-    def move(self, other, round_over, elapsed):
+    # def move(self, other, round_over, elapsed):
         if round_over:
             return
         reward = 0.0
@@ -369,18 +369,6 @@ class Fighter:
                 # other.health -= 10/3
                 self.attack_cooldown = 20
 
-                # -------------------------------------
-                # REWARD CALCULATION (refactored)
-                # -------------------------------------
-
-                
-
-                # 1. Distance shaping (encourage approaching, penalize retreat)
-                new_dx = abs(self.rect.x - other.rect.x)
-                if prev_dx is not None:
-                    move_toward = (prev_dx - new_dx) / 10.0  # scaled for stability
-                    reward += np.clip(move_toward, -0.5, 0.5)
-
                 # 2. Attack result
                 if rect.colliderect(other.rect):
                     other.health -= 10 / 3
@@ -395,37 +383,50 @@ class Fighter:
                         else:  
                             reward -= 0.5  # stronger penalty for missing
 
-                
-                if not self.training_phase == 1:
-                    # 3. Balance reward (avoid one-sided fights)
-                    health_gap = abs(self.health - other.health) / 100.0
-                    balance_penalty = -min(1.0, (health_gap / 0.3) ** 2)
-                    reward += balance_penalty
+            # -------------------------------------
+            # REWARD CALCULATION (refactored)
+            # -------------------------------------
 
-                    # 4. Duration shaping (penalize too-short or too-long fights)    
-                    target = 60.0
-                    sigma = 20.0
-                    reward += np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
+            
 
-                    # 5. Terminal bonus
-                    if self.health <= 0 or other.health <= 0:
-                        if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
-                            reward += 3.0
-                        else:
-                            reward -= 3.0
+            # 1. Distance shaping (encourage approaching, penalize retreat)
+            new_dx = abs(self.rect.x - other.rect.x)
+            if prev_dx is not None:
+                move_toward = (prev_dx - new_dx) / 10.0  # scaled for stability
+                reward += np.clip(move_toward, -0.5, 0.5)
 
-                # 6. Clamp and accumulate
-                self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
-                reward = np.clip(self.smoothed_reward, -5.0, 5.0)
-                self.episode_reward += reward
+            
+            
+            if not self.training_phase == 1:
+                # 3. Balance reward (avoid one-sided fights)
+                health_gap = abs(self.health - other.health) / 100.0
+                balance_penalty = -min(1.0, (health_gap / 0.3) ** 2)
+                reward += balance_penalty
 
-                # store debugging info (inspect these logs to tune coefficients)
-                self.debug_last_reward = {
-                    "reward_total": float(reward),
-                    "distance": float(move_toward) if 'move_toward' in locals() else 0.0,
-                    "on_hit": float(1.0 if rect.colliderect(other.rect) else -0.5),
-                    "balance_penalty": float(balance_penalty) if 'balance_penalty' in locals() else 0.0,
-                }
+                # 4. Duration shaping (penalize too-short or too-long fights)    
+                target = 60.0
+                sigma = 20.0
+                reward += np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
+
+                # 5. Terminal bonus
+                if self.health <= 0 or other.health <= 0:
+                    if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
+                        reward += 3.0
+                    else:
+                        reward -= 3.0
+
+            # 6. Clamp and accumulate
+            self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
+            reward = np.clip(self.smoothed_reward, -5.0, 5.0)
+            self.episode_reward += reward
+
+            # store debugging info (inspect these logs to tune coefficients)
+            self.debug_last_reward = {
+                "reward_total": float(reward),
+                "distance": float(move_toward) if 'move_toward' in locals() else 0.0,
+                "on_hit": float(1.0 if rect.colliderect(other.rect) else -0.5),
+                "balance_penalty": float(balance_penalty) if 'balance_penalty' in locals() else 0.0,
+            }
 
 
         # block overlap
@@ -453,6 +454,240 @@ class Fighter:
 
         self.step_count += 1
         self.attack_cooldown = max(0, self.attack_cooldown - 1)
+
+
+    def move(self, other, round_over, elapsed):
+        if round_over:
+            return
+
+        # Auto face opponent
+        self.flip = other.rect.x < self.rect.x
+
+        # --- State setup ---
+        state = self.get_state(other)
+        done = False
+        prev_dx = abs(self.rect.x - other.rect.x)
+
+        # Physics constants
+        SPEED, GRAVITY = 10, 2
+        dx, dy = 0, 0
+        self.vel_y += GRAVITY
+        dy += self.vel_y
+
+        # ======================
+        #  HUMAN CONTROL SECTION
+        # ======================
+        if self.mode == "play" and self.role == "player":
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_a]:
+                dx = -SPEED
+            elif keys[pygame.K_d]:
+                dx = SPEED
+
+            if keys[pygame.K_w] and not self.jump:
+                self.vel_y = -30
+                self.jump = True
+
+            if keys[pygame.K_j] and self.attack_cooldown == 0:
+                self.attacking = True
+                rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                        if not self.flip else
+                        pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+                if rect.colliderect(other.rect):
+                    other.health -= 10 / 3
+                self.attack_cooldown = 20
+
+            # No learning during human control
+            return
+
+        # ==================
+        #  AI CONTROL SECTION
+        # ==================
+        action = self.select_action(state)
+        if action == 0:
+            dx = -SPEED
+        elif action == 1:
+            dx = SPEED
+        elif action == 2 and not self.jump:
+            self.vel_y = -30
+            self.jump = True
+        elif action in (3, 4) and self.attack_cooldown == 0:
+            self.attacking = True
+            rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                    if not self.flip else
+                    pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+            self.attack_cooldown = 20
+
+            # Apply hit
+            if rect.colliderect(other.rect):
+                other.health -= 10 / 3
+
+        # Prevent overlap
+        new_x = self.rect.x + dx
+        temp = self.rect.copy()
+        temp.x = new_x
+        if temp.colliderect(other.rect):
+            dx = 0
+
+        # Apply position
+        self.rect.x = max(0, min(self.rect.x + dx, self.screen_width - self.rect.width))
+        self.rect.y = max(0, min(self.rect.y + dy, (self.screen_width / 2) - self.rect.height))
+        if self.rect.y >= (self.screen_width / 2) - self.rect.height:
+            self.jump = False
+
+        if self.health <= 0:
+            done = True
+            self.alive = False
+
+        # Next state
+        new_dx = abs(self.rect.x - other.rect.x)
+        next_state = self.get_state(other)
+
+        # ==========================
+        #  REWARD CALCULATION PHASE
+        # ==========================
+        if self.training_phase == 1:
+            reward, debug_info = self.compute_reward_phase1(other, prev_dx, new_dx, elapsed, action)
+        else:
+            reward, debug_info = self.compute_reward_phase2(other, prev_dx, new_dx, elapsed, action)
+
+        # Apply smoothing & clipping
+        self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
+        reward = np.clip(self.smoothed_reward, -5.0, 5.0)
+        self.episode_reward += reward
+
+        # Memory update
+        self.remember(state, action, reward, next_state, done)
+
+        # Logging for tuning
+        self.debug_last_reward = debug_info
+
+        # Step bookkeeping
+        self.step_count += 1
+        self.attack_cooldown = max(0, self.attack_cooldown - 1)
+
+    def compute_reward_phase1(self, other, prev_dx, new_dx, elapsed, action):
+        """
+        Simple reward shaping for Phase 1:
+        - Encourages moving toward the opponent
+        - Rewards successful hits
+        - Penalizes whiffed attacks or running away
+        - Adds small survival/time stability term
+        """
+
+        reward = 0.0
+        debug = {}
+
+        # 1. Distance shaping — get closer = good, retreat = bad
+        if prev_dx is not None:
+            move_toward = (prev_dx - new_dx) / 10.0
+            reward += np.clip(move_toward, -0.3, 0.3)
+            debug["move_toward"] = float(np.clip(move_toward, -0.3, 0.3))
+
+        # 2. Attack reward — hit = +1, miss = -0.5
+        if action in (3, 4) and self.attack_cooldown == 19:  # just attacked
+            rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                    if not self.flip else
+                    pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+            if rect.colliderect(other.rect):
+                reward += 1.0
+                debug["on_hit"] = 1.0
+            else:
+                reward -= 0.5
+                debug["on_hit"] = -0.5
+
+        # 3. Time survival shaping — small reward for staying alive
+        reward += 0.01
+        debug["survival"] = 0.01
+
+        # 4. Terminal bonus — win/loss outcome
+        if self.health <= 0 or other.health <= 0:
+            if self.health > other.health:
+                reward += 2.0
+                debug["terminal"] = 2.0
+            else:
+                reward -= 2.0
+                debug["terminal"] = -2.0
+
+        # Clip and return
+        reward = np.clip(reward, -5.0, 5.0)
+        debug["reward_total"] = float(reward)
+
+        return reward, debug
+
+    
+    def compute_reward_phase2(self, other, prev_dx, new_dx, elapsed, action):
+        """
+        Adaptive/human-like reward for Phase 2:
+        - Still values competence (move, hit)
+        - Adds balance & pacing: discourages one-sided wins or ultra-short fights
+        - Encourages 'human' behaviours like spacing, counter-timing, mercy when opponent weak
+        """
+
+        reward = 0.0
+        debug = {}
+
+        # 1. Distance shaping – prefer keeping tactical spacing, not constant rush
+        optimal_min, optimal_max = 80, 250
+        if new_dx < optimal_min:
+            dist_reward = -((optimal_min - new_dx) / optimal_min) * 0.3  # too close
+        elif new_dx > optimal_max:
+            dist_reward = -((new_dx - optimal_max) / optimal_max) * 0.3  # too far
+        else:
+            dist_reward = 0.2  # good range
+        reward += dist_reward
+        debug["distance"] = float(dist_reward)
+
+        # 2. Movement direction – backing off after opponent attack = okay
+        if prev_dx is not None:
+            move_toward = (prev_dx - new_dx) / 10.0
+            reward += np.clip(move_toward, -0.3, 0.3)
+            debug["move_toward"] = float(np.clip(move_toward, -0.3, 0.3))
+
+        # 3. Attack behaviour – success, restraint, or tactical retreat
+        if action in (3, 4) and self.attack_cooldown == 19:
+            rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                    if not self.flip else
+                    pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+            if rect.colliderect(other.rect):
+                reward += 0.5
+                debug["on_hit"] = 0.5
+            else:
+                reward -= 0.3
+                debug["on_hit"] = -0.3
+
+        # 4. Balance shaping – keep fights close and fair
+        health_gap = abs(self.health - other.health) / 100.0
+        balance_penalty = -min(1.0, (health_gap / 0.3) ** 2)
+        reward += balance_penalty
+        debug["balance_penalty"] = float(balance_penalty)
+
+        # 5. Mercy / taunt behaviour – small reward if leading but holding back
+        if self.health > other.health and new_dx > optimal_min and self.attack_cooldown > 0:
+            reward += 0.1  # light reward for not pressing advantage too hard
+            debug["mercy"] = 0.1
+
+        # 6. Duration shaping – prefer medium-length fights (not too short/long)
+        target, sigma = 60.0, 20.0
+        duration_bonus = np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
+        reward += duration_bonus
+        debug["duration"] = float(duration_bonus)
+
+        # 7. Terminal conditions
+        if self.health <= 0 or other.health <= 0:
+            if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
+                terminal = 3.0
+            else:
+                terminal = -3.0
+            reward += terminal
+            debug["terminal"] = float(terminal)
+
+        # Final smoothing & clipping
+        reward = np.clip(reward, -5.0, 5.0)
+        debug["reward_total"] = float(reward)
+
+        return reward, debug
+
 
     def update(self):
         # death animation: play once and then hold last frame
