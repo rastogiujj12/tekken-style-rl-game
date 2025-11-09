@@ -14,7 +14,7 @@ mixer.init()
 pygame.init()
 base_lr = 1e-4
 MODE = "train" # play, train or eval
-PHASE = 1
+PHASE = 2
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 2000
@@ -181,7 +181,8 @@ def set_learning_rate(PHASE, episodes, fighter):
     elif PHASE == 3:
         fighter.lr = 5e-5
     
-
+p1_win_rate = 0
+p2_win_rate = 0
 
 while run:
     if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
@@ -343,12 +344,12 @@ while run:
 
             if episodes_elapsed % 100 == 0 and episodes_elapsed > 0:
                 total_games = fighter_1.wins + fighter_2.wins + fighter_1.draws
-                win_rate_1 = fighter_1.wins / total_games if total_games > 0 else 0
-                win_rate_2 = fighter_2.wins / total_games if total_games > 0 else 0
+                p1_win_rate = fighter_1.wins / total_games if total_games > 0 else 0
+                p2_win_rate = fighter_2.wins / total_games if total_games > 0 else 0
                 win_logger.log(
                     episode = episodes_elapsed, 
-                    p1_win_rate = win_rate_1,
-                    p2_win_rate = win_rate_2
+                    p1_win_rate = p1_win_rate,
+                    p2_win_rate = p2_win_rate
                 )
             
             # reset for next window

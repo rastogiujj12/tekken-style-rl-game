@@ -129,7 +129,7 @@ class Fighter:
         self.epsilon_min       = 0.1
         self.epsilon_decay     = 0.9995
         self.epsilon_linear_end = 0.05
-        self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
+        self.epsilon_anneal_episodes = 1500  # reach final eps by N episodes
         self.current_episode = 0
         self.memory            = deque(maxlen=100000)
         self.train_start       = 2000

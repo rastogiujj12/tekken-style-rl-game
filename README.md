@@ -1,103 +1,100 @@
-# Battle Agents
+# RL Fighter Technical Report - Content Mapping
 
-A self‑play, deep‑reinforcement‑learning (DQN)–powered 2D fighting simulator built with Pygame and PyTorch. In **Battle Agents**, two fighters learn to battle each other over thousands of rounds—discovering strategies, combos, and even emergent tricks like double‑jumps.
+## 1. Abstract (4–5 sentences)
 
----
+* Purpose: Training an RL agent for adaptive NPC behavior in a 2D/3D fighting game.
+* Method: Deep Q-Network (DQN) with epsilon-greedy policy, replay buffer, multi-phase training (Phase 1 → Phase 2 → Phase 3).
+* Key findings: NPC learns to balance winning with human-like behavior; training stabilizes by ~2000 episodes.
+* Evidence: Reward curves, win/loss statistics.
 
-## 🚀 Features
+## 2. Background / Introduction (1–2 paragraphs)
 
-- **Deep Q‑Networks (DQN):** Each agent has its own 5‑layer neural network (4 inputs → 256, 256, 128, 64 hidden units → 5 outputs).
-- **Self‑play training:** Fighters learn by competing against each other, driving an “arms race” of tactics.
-- **Emergent behavior:** Watch them invent hit‑and‑run, corner‑trap pressure, timed heavy attacks, and even double‑jumps!
-- **Replay buffer & target network:** Stable training with experience replay and periodic target‑network updates.
-- **Extensible architecture:** Easily add new actions (dash, block, combos), tweak rewards, or change arena settings.
-![battle_agents_demo](https://github.com/user-attachments/assets/79181c54-0c9b-4cb4-8844-dc1feb5d3415)
+* RL in games: trial-and-error learning, reward-based policy improvement.
+* NPC adaptation: importance for realistic gameplay.
+* References: BoxStacker for RL in virtual environments, general DQN literature.
+* Optional: Brief mention of challenges (sparse rewards, balancing realism vs performance).
 
----
+## 3. Methodology (~1.2–1.5 pages)
 
-## 📂 Repository Structure
+### A. Environment Setup
 
-```
-Battle-Agents/
-├── assets/
-│   ├── images/
-│   │   ├── background/
-│   │   └── warrior/, wizard/ sprites
-│   └── audio/
-│       ├── music.mp3
-│       └── sword.wav, magic.wav
-├── main.py          # Game loop, window setup, score & round logic
-├── fighter.py       # DQN implementation, agent physics & actions
-├── requirements.txt # Python dependencies (pygame, torch, numpy)
-└── README.md        # You are here!
-```
+* Game environment description (2D/3D arena, player sprites).
+* Phases:
 
----
+  * Phase 1: baseline training against default opponent.
+  * Phase 2: adaptive reward shaping for human-like behavior.
+  * Phase 3: (if any) further strategy refinement.
 
-## 🛠 Getting Started
+### B. State Space (Table 1)
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/buzzfit/Battle-Agents.git
-   cd Battle-Agents
-   ```
+| Variable        | Description                                      |
+| --------------- | ------------------------------------------------ |
+| Player position | x, y coordinates of player                       |
+| Velocity        | Speed in x/y directions                          |
+| Health          | Current health/life points                       |
+| Distance        | Distance to opponent                             |
+| Cooldowns       | Time left for special moves                      |
+| Others          | Optional: status effects, environment boundaries |
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### C. Action Space (Table 2)
 
-3. **Run the simulator**
-   ```bash
-   python main.py
-   ```
+| Action          | Description                   |
+| --------------- | ----------------------------- |
+| Move left/right | Discrete horizontal movement  |
+| Jump / Crouch   | Vertical movement             |
+| Attack          | Basic attack                  |
+| Block           | Defensive move                |
+| Special move    | Any combo or signature attack |
 
-4. **Watch the learning** — agents train continuously. After hundreds or thousands of rounds, they evolve sophisticated tactics that you can observe in real time.
+### D. Reward Design
 
----
+* Phase 2 reward function (`compute_reward_phase2`):
 
----
+  * Positive reward for hitting opponent.
+  * Negative reward for taking damage.
+  * Bonus for winning a round.
+  * Penalty for unrealistic/repetitive moves.
+* Optionally include pseudocode or simplified formula as a figure.
 
-*This simulator is fully autonomous: the agents train and play against each other without manual input.*
+### E. Algorithm
 
+* DQN: Q-network, epsilon-greedy policy, replay buffer, learning rate.
+* Mention phase-specific tweaks (epsilon decay, reward scaling).
 
----
+### Figures/Tables:
 
-## ⚙ Technical Details
+* Figure 1: RL Agent–Environment Loop (state → action → reward → next state)
+* Figure 2: Training workflow diagram (Phase 1 → Phase 2 → Phase 3)
 
-- **State vector:** `[dx_norm, dy_norm, self_health, opponent_health]` (4 dims)
-- **Action space:** 5 discrete actions (idle/move left/move right/jump/light/heavy attack)
-- **Reward structure:**
-  - +1.0 for a successful hit
-  - –0.1 for a missed attack
-  - –5.0 on death
-- **Network & training:** Adam optimizer (lr=1e-4), γ=0.99, ε-decay from 1.0 → 0.1, replay buffer size=10k, batch=64, target update every 1k steps.
+## 4. Results (~0.5 page)
 
----
+* Win/loss statistics: table or summary (Phase 1 vs Phase 2).
+* Reward trends: plot of average reward vs episodes.
+* Behavior adaptation: short description (e.g., NPC learned to block more frequently against strong attacks).
+* Optional: screenshot of environment showing NPC action.
 
-## 📈 Results & Observations
+### Figures/Tables:
 
-- **Balanced play:** After 400 rounds, agents often split wins 200/200—a near‑perfect draw.
-- **Emergent moves:** Learned combos, bait‑and‑punish sequences, and double‑jumps without explicit coding.
+* Figure 3: Reward vs episodes curve
+* Optional: screenshot of NPC in action
 
----
+## 5. Discussion (~0.25 page)
 
-## 🤝 Contributing
+* Strengths: adaptive NPC, learning stabilizes by ~2000 episodes, reward shaping effective.
+* Challenges: sparse rewards, balancing optimal vs human-like behavior, training time.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/<name>`)
-3. Commit your changes (`git commit -m "Add <feature>"`)
-4. Push to your branch (`git push origin feature/<name>`)
-5. Open a Pull Request
+## 6. Limitations & Future Work (~0.25 page)
 
-We welcome ideas: new moves, arena shapes, multi‑agent tournaments, visualizations, and more!
+* Limitations: simplified game environment, limited state/action space, potential overfitting.
+* Future work:
 
----
+  * Multi-agent training for more complex scenarios
+  * Introduce continuous action space
+  * Curiosity-based or intrinsic rewards
+  * Expand environment complexity (more moves, obstacles, or physics)
 
-## 🙏 Acknowledgements
+## 7. References
 
-This project builds upon the original manual player-vs-player tutorial by Russs123. Thanks to [Brawler Tutorial on GitHub](https://github.com/russs123/brawler_tut) and the [YouTube walkthrough video](https://www.youtube.com/watch?v=s5bd9KMSSW4) for the inspiration and foundational code.
-
----
-
-﻿# Battle-Agents
+* BoxStacker article for RL in virtual environments.
+* DQN / RL standard references.
+* Any other relevant papers (if needed).
