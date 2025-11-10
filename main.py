@@ -13,7 +13,7 @@ torch.manual_seed(0)
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "play" # play, train or eval
+MODE = "train" # play, train or eval
 PHASE = 3
 
 SAVE_INTERVAL = 50
@@ -23,7 +23,8 @@ TOTAL_EPISODES = 2000
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
 
 if not PHASE ==1:
-    player1_variants = [x for x in range(0,1000,50)]
+    player1_variants = [x for x in range(0,1200,50)]
+    print(player1_variants)
     chosen_variant = random.choice(player1_variants)
     print("chosen_variant", chosen_variant)
 
