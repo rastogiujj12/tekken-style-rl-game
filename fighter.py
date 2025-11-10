@@ -127,18 +127,18 @@ class Fighter:
         self.gamma             = 0.99
         self.batch_size        = 64
         self.lr                = 1e-4
-        self.epsilon           = 0
+        self.epsilon           = 1.0
         self.epsilon_min       = 0.1
         self.epsilon_decay     = 0.9995
         self.epsilon_linear_end = 0.05
-        self.epsilon_anneal_episodes = 1500  # reach final eps by N episodes
+        self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
         self.current_episode = 0
         self.memory            = deque(maxlen=100000)
         self.train_start       = 2000
         self.update_target_steps = 200
         self.step_count        = 0
         if self.mode=="play":
-            self.epsilon = self.epsilon_linear_end
+            self.epsilon = 0
 
         # if self.training_phase==1 or self.role=="enemy":
 
@@ -192,10 +192,27 @@ class Fighter:
 
 
     def anneal_epsilon(self):
-        self.epsilon = max(
-            self.epsilon_linear_end,
-            1 - (self.current_episode / self.epsilon_anneal_episodes) * (1 - self.epsilon_linear_end)
-        )
+        # self.epsilon = max(
+        #     self.epsilon_linear_end,
+        #     1 - (self.current_episode / self.epsilon_anneal_episodes) * (1 - self.epsilon_linear_end)
+        # )
+
+        # two-stage linear schedule: 1.0 -> 0.1 over first 40% episodes,
+        # then 0.1 -> final_eps over next 60%
+        final_eps = 0.02   # or 0.05 if you prefer slightly higher exploration
+        halfpoint = int(0.4 * max(1, self.epsilon_anneal_episodes))
+        if self.current_episode >= self.epsilon_anneal_episodes:
+            self.epsilon = final_eps
+        else:
+            if self.current_episode <= halfpoint:
+                # stage 1: 1.0 -> 0.1
+                t = self.current_episode / max(1, halfpoint)
+                self.epsilon = 1.0 + t * (0.1 - 1.0)
+            else:
+                # stage 2: 0.1 -> final_eps
+                t = (self.current_episode - halfpoint) / max(1, self.epsilon_anneal_episodes - halfpoint)
+                self.epsilon = 0.1 + t * (final_eps - 0.1)
+
 
 
     def load_images(self, sheet, steps):
@@ -699,70 +716,62 @@ class Fighter:
     
     def compute_reward_phase3(self, other, prev_dx, new_dx, elapsed, action):
         """
-        Phase 3 reward:
-        - Smooth spacing reward (Gaussian curve)
-        - Light reward on successful hit
-        - Penalty for miss
-        - Penalty for unnecessary jumps
-        - Penalty for rushing straight into the opponent
-        - No terminal win/lose shaping
+        Phase 3 (rebalanced):
+        - Spacing reward centered at 0 (Gaussian)
+        - Small per-frame survival bonus
+        - Bigger hit reward (sparse)
+        - softer miss / jump penalties
+        - motion shaping kept small
         """
-
         reward = 0.0
         debug = {}
 
-        # -------------------------
-        # 1. Gaussian spacing reward
-        # -------------------------
+        # 1) Gaussian spacing (centered around 0)
         optimal_dist = 150.0
         sigma = 60.0
-
-        spacing_reward = np.exp(-((new_dx - optimal_dist) ** 2) / (2 * sigma ** 2))
-        spacing_reward = (spacing_reward * 0.4) - 0.2  # range roughly [-0.2, +0.2]
-
+        spacing = np.exp(-((new_dx - optimal_dist) ** 2) / (2 * sigma ** 2))
+        # normalize to roughly [0,1] then remap to [-0.15, +0.25] (slightly positive bias)
+        spacing_reward = spacing * 0.4 - 0.08
         reward += spacing_reward
         debug["spacing"] = float(spacing_reward)
 
-        # -------------------------
-        # 2. Movement direction shaping (not too strong)
-        # -------------------------
+        # 2) tiny survival bonus so episodes don't accumulate strong negative drift
+        survival_bonus = 0.01
+        reward += survival_bonus
+        debug["survival"] = float(survival_bonus)
+
+        # 3) movement direction shaping (small)
         if prev_dx is not None:
             delta = (prev_dx - new_dx) / 20.0
-            delta = np.clip(delta, -0.15, 0.15)
+            delta = float(np.clip(delta, -0.12, 0.12))
             reward += delta
-            debug["movement"] = float(delta)
+            debug["movement"] = delta
 
-        # -------------------------
-        # 3. Attack reward
-        # -------------------------
+        # 4) attack reward on the action frame (sparse)
+        # we check attack_cooldown trigger like before (assumes cooldown set to 19 when attack starts)
         if action in (3, 4) and self.attack_cooldown == 19:
             rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
                     if not self.flip else
                     pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
-
             if rect.colliderect(other.rect):
-                hit_reward = 0.6
+                hit_reward = 1.0   # stronger, less frequent positive
                 reward += hit_reward
                 debug["hit"] = hit_reward
             else:
-                miss_penalty = -0.25
+                miss_penalty = -0.15
                 reward += miss_penalty
                 debug["hit"] = miss_penalty
 
-        # -------------------------
-        # 4. Anti-jump spam
-        # -------------------------
+        # 5) discourage needless jumps (smaller)
         if action == 2:
-            reward -= 0.15
-            debug["jump_penalty"] = -0.15
+            reward -= 0.1
+            debug["jump_penalty"] = -0.1
 
-        # -------------------------
-        # Final clipping
-        # -------------------------
-        reward = np.clip(reward, -2.0, 2.0)
+        # Clip and return debug
+        reward = np.clip(reward, -3.0, 3.0)
         debug["reward_total"] = float(reward)
-
         return reward, debug
+
 
 
     def update(self):

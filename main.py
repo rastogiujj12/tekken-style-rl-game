@@ -17,7 +17,7 @@ MODE = "train" # play, train or eval
 PHASE = 3
 
 SAVE_INTERVAL = 50
-TOTAL_EPISODES = 2000
+TOTAL_EPISODES = 1000
 
 # if not MODE =="play":
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
