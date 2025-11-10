@@ -13,8 +13,8 @@ torch.manual_seed(0)
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "train" # play, train or eval
-PHASE = 2
+MODE = "play" # play, train or eval
+PHASE = 3
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 2000
@@ -164,7 +164,7 @@ fighter_2 = Fighter(
     x=700, y=310, flip=True,
     data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
     attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    role="enemy", training_phase = PHASE, continue_from_episode = 1000, mode=MODE
+    role="enemy", training_phase = PHASE, continue_from_episode = 2000, mode=MODE
 )
 
 if not PHASE == 1:
@@ -405,13 +405,13 @@ while run:
                 print(f"[INFO] Loaded Fighter weights from {chosen_variant}")
             
 
-            if hasattr(fighter_2, "debug_last_reward"):
-                dbg = fighter_2.debug_last_reward
-                reward_logger.log(
-                    episode=episodes_elapsed,
-                    step=fighter_1.step_count,
-                    **{f"dbg2_{k}": v for k, v in dbg.items()}
-                )
+            # if hasattr(fighter_2, "debug_last_reward"):
+            #     dbg = fighter_2.debug_last_reward
+            #     reward_logger.log(
+            #         episode=episodes_elapsed,
+            #         step=fighter_1.step_count,
+            #         **{f"dbg2_{k}": v for k, v in dbg.items()}
+            #     )
 
             if PHASE>1:
                 set_learning_rate(PHASE, episodes_elapsed, fighter_2)

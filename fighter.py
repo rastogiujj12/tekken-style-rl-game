@@ -103,6 +103,8 @@ class Fighter:
         self.jump          = False
         self.attacking     = False
         self.attack_cooldown = 0
+        self.jump_cooldown   = 0
+
         self.hit           = False
         self.health        = 100
         self.alive         = True
@@ -125,7 +127,7 @@ class Fighter:
         self.gamma             = 0.99
         self.batch_size        = 64
         self.lr                = 1e-4
-        self.epsilon           = 1.0
+        self.epsilon           = 0
         self.epsilon_min       = 0.1
         self.epsilon_decay     = 0.9995
         self.epsilon_linear_end = 0.05
@@ -497,30 +499,29 @@ class Fighter:
                     other.health -= 10 / 3
                 self.attack_cooldown = 20
 
-            # No learning during human control
-            return
+        else:
+            # ==================
+            #  AI CONTROL SECTION
+            # ==================
+            action = self.select_action(state)
+            if action == 0:
+                dx = -SPEED
+            elif action == 1:
+                dx = SPEED
+            elif action == 2 and not self.jump and self.jump_cooldown == 0:
+                self.vel_y = -30
+                self.jump = True
+                self.jump_cooldown = 25
+            elif action in (3, 4) and self.attack_cooldown == 0:
+                self.attacking = True
+                rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                        if not self.flip else
+                        pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+                self.attack_cooldown = 20
 
-        # ==================
-        #  AI CONTROL SECTION
-        # ==================
-        action = self.select_action(state)
-        if action == 0:
-            dx = -SPEED
-        elif action == 1:
-            dx = SPEED
-        elif action == 2 and not self.jump:
-            self.vel_y = -30
-            self.jump = True
-        elif action in (3, 4) and self.attack_cooldown == 0:
-            self.attacking = True
-            rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
-                    if not self.flip else
-                    pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
-            self.attack_cooldown = 20
-
-            # Apply hit
-            if rect.colliderect(other.rect):
-                other.health -= 10 / 3
+                # Apply hit
+                if rect.colliderect(other.rect):
+                    other.health -= 10 / 3
 
         # Prevent overlap
         new_x = self.rect.x + dx
@@ -543,28 +544,34 @@ class Fighter:
         new_dx = abs(self.rect.x - other.rect.x)
         next_state = self.get_state(other)
 
-        # ==========================
-        #  REWARD CALCULATION PHASE
-        # ==========================
-        if self.training_phase == 1:
-            reward, debug_info = self.compute_reward_phase1(other, prev_dx, new_dx, elapsed, action)
-        else:
-            reward, debug_info = self.compute_reward_phase2(other, prev_dx, new_dx, elapsed, action)
+        if self.mode == "train" and self.role == "enemy":
 
-        # Apply smoothing & clipping
-        self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
-        reward = np.clip(self.smoothed_reward, -5.0, 5.0)
-        self.episode_reward += reward
 
-        # Memory update
-        self.remember(state, action, reward, next_state, done)
+            # ==========================
+            #  REWARD CALCULATION PHASE
+            # ==========================
+            if self.training_phase == 1:
+                reward, debug_info = self.compute_reward_phase1(other, prev_dx, new_dx, elapsed, action)
+            elif self.training_phase == 2:
+                reward, debug_info = self.compute_reward_phase2(other, prev_dx, new_dx, elapsed, action)
+            else:
+                reward, debug_info = self.compute_reward_phase3(other, prev_dx, new_dx, elapsed, action)
 
-        # Logging for tuning
-        self.debug_last_reward = debug_info
+            # Apply smoothing & clipping
+            self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
+            reward = np.clip(self.smoothed_reward, -5.0, 5.0)
+            self.episode_reward += reward
+
+            # Memory update
+            self.remember(state, action, reward, next_state, done)
+
+            # Logging for tuning
+            self.debug_last_reward = debug_info
 
         # Step bookkeeping
         self.step_count += 1
         self.attack_cooldown = max(0, self.attack_cooldown - 1)
+        self.jump_cooldown = max(0, self.jump_cooldown - 1)
 
     def compute_reward_phase1(self, other, prev_dx, new_dx, elapsed, action):
         """
@@ -685,6 +692,74 @@ class Fighter:
 
         # Final smoothing & clipping
         # reward = np.clip(reward, -5.0, 5.0)
+        debug["reward_total"] = float(reward)
+
+        return reward, debug
+
+    
+    def compute_reward_phase3(self, other, prev_dx, new_dx, elapsed, action):
+        """
+        Phase 3 reward:
+        - Smooth spacing reward (Gaussian curve)
+        - Light reward on successful hit
+        - Penalty for miss
+        - Penalty for unnecessary jumps
+        - Penalty for rushing straight into the opponent
+        - No terminal win/lose shaping
+        """
+
+        reward = 0.0
+        debug = {}
+
+        # -------------------------
+        # 1. Gaussian spacing reward
+        # -------------------------
+        optimal_dist = 150.0
+        sigma = 60.0
+
+        spacing_reward = np.exp(-((new_dx - optimal_dist) ** 2) / (2 * sigma ** 2))
+        spacing_reward = (spacing_reward * 0.4) - 0.2  # range roughly [-0.2, +0.2]
+
+        reward += spacing_reward
+        debug["spacing"] = float(spacing_reward)
+
+        # -------------------------
+        # 2. Movement direction shaping (not too strong)
+        # -------------------------
+        if prev_dx is not None:
+            delta = (prev_dx - new_dx) / 20.0
+            delta = np.clip(delta, -0.15, 0.15)
+            reward += delta
+            debug["movement"] = float(delta)
+
+        # -------------------------
+        # 3. Attack reward
+        # -------------------------
+        if action in (3, 4) and self.attack_cooldown == 19:
+            rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+                    if not self.flip else
+                    pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+
+            if rect.colliderect(other.rect):
+                hit_reward = 0.6
+                reward += hit_reward
+                debug["hit"] = hit_reward
+            else:
+                miss_penalty = -0.25
+                reward += miss_penalty
+                debug["hit"] = miss_penalty
+
+        # -------------------------
+        # 4. Anti-jump spam
+        # -------------------------
+        if action == 2:
+            reward -= 0.15
+            debug["jump_penalty"] = -0.15
+
+        # -------------------------
+        # Final clipping
+        # -------------------------
+        reward = np.clip(reward, -2.0, 2.0)
         debug["reward_total"] = float(reward)
 
         return reward, debug
