@@ -23,7 +23,7 @@ TOTAL_EPISODES = 2000
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
 
 if not PHASE ==1:
-    player1_variants = [x for x in range(0,1200,50)]
+    player1_variants = [x for x in range(0,1201,50)]
     print(player1_variants)
     chosen_variant = random.choice(player1_variants)
     print("chosen_variant", chosen_variant)
