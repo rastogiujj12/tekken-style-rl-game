@@ -6,31 +6,21 @@ from pygame import mixer
 from fighter import Fighter
 from logger import Logger
 
+np.random.seed(0); 
+random.seed(0); 
+torch.manual_seed(0)
+
 mixer.init()
 pygame.init()
 base_lr = 1e-4
 MODE = "play" # play, train or eval
-PHASE = 4
+PHASE = 5
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 1000
 
-# if not MODE =="play":
-PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
-
-if not PHASE ==1:
-    player1_variants = [x for x in range(0,1000,50)]
-    chosen_variant = random.choice(player1_variants)
-    print("chosen_variant", chosen_variant)
-
-
-# logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
-step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
-episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
-reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
-
-
-print(f"[INFO] Logging to {step_logger.path()}")
+if PHASE != 1:
+    TOTAL_EPISODES = 2000
 
 #make folder structure
 os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
@@ -42,6 +32,25 @@ os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
 
 os.makedirs("recordings", exist_ok=True)
 
+# if not MODE =="play":
+PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
+
+if not PHASE == 1:
+    player1_variants = [x for x in range(0,1201,50)]
+    print(player1_variants)
+    chosen_variant = random.choice(player1_variants)
+    print("chosen_variant", chosen_variant)
+
+
+# logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}")
+step_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_steps")
+episode_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_episodes")
+reward_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_rewards")
+win_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_win")
+
+print(f"[INFO] Logging to {step_logger.path()}")
+
+
 # create game window
 SCREEN_WIDTH = 1000
 SCREEN_HEIGHT = 600
@@ -51,6 +60,7 @@ if MODE == "train":
     flag = pygame.HIDDEN
 else:
     flag = 0
+# flag=0
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), flags=flag)
 pygame.display.set_caption("RL Fighting Game")
 
@@ -159,30 +169,25 @@ fighter_2 = Fighter(
     x=700, y=310, flip=True,
     data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
     attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    role="enemy", training_phase = PHASE, continue_from_episode = 1000, mode=MODE
+    role="enemy", training_phase = 4, continue_from_episode = 2000, mode=MODE
 )
 
 if not PHASE == 1:
-    fighter_1.epsilon = 0.0  # Fixed (opponent)
-    fighter_2.epsilon_start = 1.0
+    fighter_1.epsilon = 0.0 
     q1 = loss1 = 0
 
 run = True
 episode_step=0
-def set_learning_rate(fighter_2):
-    lr_scale = 1
-    #scale learning rate for phase 3
-    if episodes_elapsed < 50:
-        lr_scale = 0.5  # stabilize after reward change
-    elif episodes_elapsed < 150:
-        lr_scale = 1  # mid-phase adaptation
-    else:
-        lr_scale = 0.7
-    for g in fighter_2.optimizer.param_groups:
-        g['lr'] = base_lr * lr_scale
 
-if PHASE==3:
-    set_learning_rate(fighter_2)
+def set_learning_rate(PHASE, episodes, fighter):
+    if PHASE == 2 and episodes>1000:
+        fighter_2.lr = 5e-5
+    elif PHASE == 3:
+        fighter_2.lr = 5e-5
+    
+p1_win_rate = 0
+p2_win_rate = 0
+
 while run:
     if episodes_elapsed>TOTAL_EPISODES and not MODE=="play":
         run = False
@@ -209,30 +214,34 @@ while run:
         secs   = int(rem)%60
         draw_text(f"{mins}:{secs:02d}", count_font, RED, SCREEN_WIDTH/2-40, 10)
 
-        # agents move, learn, and draw themselves
-        # if MODE=="play":
-        #     keys = pygame.key.get_pressed()
-        #     action_p1 = [0, 0, 0, 0]  # [left, right, jump, attack]
-
-        #     if keys[pygame.K_a]:
-        #         action_p1[0] = 1  # move left
-        #     if keys[pygame.K_d]:
-        #         action_p1[1] = 1  # move right
-        #     if keys[pygame.K_w]:
-        #         action_p1[2] = 1  # jump
-        #     if keys[pygame.K_j]:
-        #         action_p1[3] = 1  # attack
-        # else:
         fighter_1.move(fighter_2, round_over, elapsed)
         fighter_2.move(fighter_1, round_over, elapsed)
 
         if PHASE==1:
             loss1, q1 = fighter_1.optimize()
             loss2, q2 = fighter_2.optimize()
-            if (loss1 is not None or loss2 is not None) and fighter_1.step_count % 500 == 0:
+            if (loss1 is not None or loss2 is not None) and fighter_1.step_count % 50 == 0:
+                 # --- gradient norms ---
+                grad_norm_p1 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_1.policy_net.parameters() if p.grad is not None)) ** 0.5
+                grad_norm_p2 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_2.policy_net.parameters() if p.grad is not None)) ** 0.5
+
+                # --- input normalization stats ---
+                if hasattr(fighter_1, "_rms"):
+                    rms_mean_p1 = float(fighter_1._rms.mean.mean())
+                    rms_std_p1  = float(np.sqrt(fighter_1._rms.var.mean()))
+                else:
+                    rms_mean_p1, rms_std_p1 = 0.0, 1.0
+
+                if hasattr(fighter_2, "_rms"):
+                    rms_mean_p2 = float(fighter_2._rms.mean.mean())
+                    rms_std_p2  = float(np.sqrt(fighter_2._rms.var.mean()))
+                else:
+                    rms_mean_p2, rms_std_p2 = 0.0, 1.0
+                            
+                # --- log everything ---
                 step_logger.log(
                     episode=episodes_elapsed,
-                    elapsed_time = elapsed,
+                    elapsed_time=elapsed,
                     step=fighter_1.step_count,
                     loss_p1=loss1 or 0.0,
                     loss_p2=loss2 or 0.0,
@@ -241,14 +250,31 @@ while run:
                     eps_p1=round(fighter_1.epsilon, 3),
                     eps_p2=round(fighter_2.epsilon, 3),
                     reward_p1=getattr(fighter_1, "episode_reward", 0.0),
-                    reward_p2=getattr(fighter_2, "episode_reward", 0.0)
+                    reward_p2=getattr(fighter_2, "episode_reward", 0.0),
+                    grad_norm_p1=grad_norm_p1,
+                    grad_norm_p2=grad_norm_p2,
+                    rms_mean_p1=rms_mean_p1,
+                    rms_std_p1=rms_std_p1,
+                    rms_mean_p2=rms_mean_p2,
+                    rms_std_p2=rms_std_p2
                 )
         else:
             loss2, q2 = fighter_2.optimize()
             if loss2 is not None and fighter_1.step_count % 500 == 0:
+                 # --- gradient norm (for fighter_2 only) ---
+                grad_norm_p2 = sum((p.grad.data.norm(2).item() ** 2 for p in fighter_2.policy_net.parameters() if p.grad is not None)) ** 0.5
+
+                # --- input normalization stats ---
+                if hasattr(fighter_2, "_rms"):
+                    rms_mean_p2 = float(fighter_2._rms.mean.mean())
+                    rms_std_p2  = float(np.sqrt(fighter_2._rms.var.mean()))
+                else:
+                    rms_mean_p2, rms_std_p2 = 0.0, 1.0
+
+                 # --- main logging ---
                 step_logger.log(
                     episode=episodes_elapsed,
-                    episode_step = episode_step,
+                    episode_step=episode_step,
                     loss_p1=0.0,
                     loss_p2=loss2 or 0.0,
                     q_p1=0.0,
@@ -258,7 +284,10 @@ while run:
                     reward_p1=getattr(fighter_1, "episode_reward", 0.0),
                     reward_p2=getattr(fighter_2, "episode_reward", 0.0),
                     lr=fighter_2.optimizer.param_groups[0]['lr'],
-                    opponent_ep =chosen_variant,
+                    opponent_ep=chosen_variant,
+                    grad_norm_p2=grad_norm_p2,
+                    rms_mean_p2=rms_mean_p2,
+                    rms_std_p2=rms_std_p2
                 )            
 
         fighter_1.update()
@@ -271,10 +300,12 @@ while run:
                 score[1] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
+                fighter_2.wins+=1
             elif not fighter_2.alive:
                 score[0] += 1
                 round_over = True
                 round_over_time = pygame.time.get_ticks()
+                fighter_1.wins+=1
 
         if rem <= 0 or (round_over and pygame.time.get_ticks()-round_over_time > ROUND_OVER_COOLDOWN):
             round_over = False
@@ -301,6 +332,19 @@ while run:
                 torch.save(fighter_2.optimizer.state_dict(), 
                             f"weights/player_2/phase_{PHASE}/optimizer/_ep_{episodes_elapsed}.pth")
 
+            if episodes_elapsed % 100 == 0 and episodes_elapsed > 0:
+                total_games = fighter_1.wins + fighter_2.wins + fighter_1.draws
+                p1_win_rate = fighter_1.wins / total_games if total_games > 0 else 0
+                p2_win_rate = fighter_2.wins / total_games if total_games > 0 else 0
+                win_logger.log(
+                    episode = episodes_elapsed, 
+                    p1_win_rate = p1_win_rate,
+                    p2_win_rate = p2_win_rate
+                )
+            
+            # reset for next window
+            fighter_1.wins = fighter_2.wins = fighter_1.draws = fighter_2.draws = 0
+
             print(f"episode {episodes_elapsed} over, score: {score}")
             episodes_elapsed +=1
 
@@ -309,63 +353,62 @@ while run:
             fighter_1.anneal_epsilon()
             fighter_2.anneal_epsilon()
 
+            avg_reward_p1 = fighter_1.episode_reward / max(1, episode_step)
+            avg_reward_p2 = fighter_2.episode_reward / max(1, episode_step)
+
+            avg_duration = episode_step
+
             episode_logger.log(
                 episode=episodes_elapsed,
                 epsilon_p1=round(fighter_1.epsilon, 3),
                 epsilon_p2=round(fighter_2.epsilon, 3),
                 score_p1=score[0],
                 score_p2=score[1],
-                opponent_ep = chosen_variant,
-                episode_step = episode_step,
-                lr = fighter_2.optimizer.param_groups[0]['lr']
+                avg_duration=avg_duration,
+                avg_reward_p1=fighter_1.episode_reward / max(1, episode_step),
+                avg_reward_p2=fighter_2.episode_reward / max(1, episode_step),
+                opponent_ep=chosen_variant,
+                episode_step=episode_step,
+                lr=fighter_2.optimizer.param_groups[0]['lr']
             )
             
             # reset fighters
             if PHASE>1:
-                chosen_variant = random.choice(player1_variants)
+                # chosen_variant = random.choice(player1_variants)
+                # choosing player 1 variant
+                if p2_win_rate > 0.7:
+                    # NPC too strong → fight weaker Player 1s
+                    weights = np.linspace(1.0, 0.1, len(player1_variants))
+                elif p2_win_rate < 0.3:
+                    # NPC too weak → fight weaker Player 1s (to rebuild)
+                    weights = np.linspace(0.3, 1.0, len(player1_variants))
+                else:
+                    # balanced → moderate distribution
+                    weights = np.ones(len(player1_variants))
+
+                weights /= np.sum(weights)
+                chosen_variant = random.choices(player1_variants, weights=weights)[0]
+
                 checkpoint = torch.load(f"{PLAYER_1_MODEL_PATH}{chosen_variant}.pth", map_location=fighter_1.device)
                 fighter_1.policy_net.load_state_dict(checkpoint)
                 fighter_1.target_net.load_state_dict(checkpoint)
                 print(f"[INFO] Loaded Fighter weights from {chosen_variant}")
             
-            if(fighter_2.debug_last_reward is not None):
-                components = fighter_2.debug_last_reward
-                
-                reward_logger.log(
-                    episode = fighter_2.current_episode,
-                    raw_total = components["raw_total"],
-                    after_scale = components["after_scale"],
-                    health_diff_reward = components["health_diff_reward"],
-                    duration_reward = components["duration_reward"],
-                    on_hit = components["on_hit"],
-                    episode_reward = fighter_2.episode_reward,
-                )
 
-            if PHASE==3:
-                set_learning_rate(fighter_2)
+            # if hasattr(fighter_2, "debug_last_reward"):
+            #     dbg = fighter_2.debug_last_reward
+            #     reward_logger.log(
+            #         episode=episodes_elapsed,
+            #         step=fighter_1.step_count,
+            #         **{f"dbg2_{k}": v for k, v in dbg.items()}
+            #     )
+
+            if PHASE>1:
+                set_learning_rate(PHASE, episodes_elapsed, fighter_2)
 
             episode_step=0
             fighter_1.reset()
             fighter_2.reset()
-
-    # if episodes_elapsed >= TOTAL_EPISODES and PHASE==1:
-    #     episodes_elapsed = 0
-    #     PHASE = 2
-
-    #     fighter_1 = Fighter(
-    #     player=1,
-    #         x=200, y=310, flip=False,
-    #         data=WARRIOR_DATA, sprite_sheet=WARRIOR_SHEET, animation_steps=WARRIOR_STEPS,
-    #         attack_sound=sword_fx, screen_width=SCREEN_WIDTH, 
-    #         role="player", training_phase = 2, continue_from_episode = TOTAL_EPISODES
-    #     )
-    #     fighter_2 = Fighter(
-    #         player=2,
-    #         x=700, y=310, flip=True,
-    #         data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
-    #         attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    #         role="enemy", training_phase = 2, continue_from_episode = TOTAL_EPISODES
-    #     )
 
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
