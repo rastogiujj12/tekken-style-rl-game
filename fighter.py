@@ -131,7 +131,10 @@ class Fighter:
         self.epsilon_min       = 0.1
         self.epsilon_decay     = 0.9995
         self.epsilon_linear_end = 0.05
-        self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
+        if self.training_phase ==1:
+            self.epsilon_anneal_episodes = 800  # reach final eps by N episodes
+        else:
+            self.epsilon_anneal_episodes = 1500
         self.current_episode = 0
         self.memory            = deque(maxlen=100000)
         self.train_start       = 2000
@@ -152,8 +155,8 @@ class Fighter:
         npc_optim_path = None
 
         if self.role == "enemy":
-            npc_model_path = f"weights/player_2/phase_{self.training_phase-1}/model/_ep_{continue_from_episode}.pth"
-            npc_optim_path = f"weights/player_2/phase_{self.training_phase-1}/optimizer/_ep_{continue_from_episode}.pth"
+            npc_model_path = f"weights/player_2/phase_{self.training_phase}/model/_ep_{continue_from_episode}.pth"
+            npc_optim_path = f"weights/player_2/phase_{self.training_phase}/optimizer/_ep_{continue_from_episode}.pth"
         else:
             npc_model_path = f"weights/player_1/phase_1/model/_ep_{continue_from_episode}.pth"
             npc_optim_path = f"weights/player_1/phase_1/optimizer/_ep_{continue_from_episode}.pth"
@@ -330,149 +333,149 @@ class Fighter:
 
 
     # def move(self, other, round_over, elapsed):
-        if round_over:
-            return
-        reward = 0.0
-        # auto face opponent
-        self.flip = other.rect.x < self.rect.x
+        # if round_over:
+        #     return
+        # reward = 0.0
+        # # auto face opponent
+        # self.flip = other.rect.x < self.rect.x
 
-        state  = self.get_state(other)
-        # action = self.select_action(state)
-        done   = False
-        prev_dx = abs(self.rect.x - other.rect.x)
+        # state  = self.get_state(other)
+        # # action = self.select_action(state)
+        # done   = False
+        # prev_dx = abs(self.rect.x - other.rect.x)
 
-        SPEED, GRAVITY = 10, 2
-        dx, dy = 0, 0
-        self.vel_y += GRAVITY
-        dy       += self.vel_y
+        # SPEED, GRAVITY = 10, 2
+        # dx, dy = 0, 0
+        # self.vel_y += GRAVITY
+        # dy       += self.vel_y
 
-        # ---------------------------
-        # HUMAN CONTROL SECTION
-        # ---------------------------
-        if self.mode == "play" and self.role == "player":
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_a]:
-                dx = -SPEED
-            elif keys[pygame.K_d]:
-                dx = SPEED
-            if keys[pygame.K_w] and not self.jump:
-                self.vel_y = -30
-                self.jump = True
-            if keys[pygame.K_j] and self.attack_cooldown == 0:
-                self.attacking = True
-                # self.attack_sound.play()
-                rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
-                        if not self.flip else
-                        pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
-                if rect.colliderect(other.rect):
-                    other.health -= 10/3
-                self.attack_cooldown = 20
-        # ---------------------------
-        # AI CONTROL SECTION
-        # ---------------------------
-        else:
-            action = self.select_action(state)
-            if action == 0:
-                dx = -SPEED
-            elif action == 1:
-                dx = SPEED
-            elif action == 2 and not self.jump:
-                self.vel_y = -30
-                self.jump = True
-            elif action in (3, 4) and self.attack_cooldown == 0:
-                self.attacking = True
-                rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
-                        if not self.flip else
-                        pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+        # # ---------------------------
+        # # HUMAN CONTROL SECTION
+        # # ---------------------------
+        # if self.mode == "play" and self.role == "player":
+        #     keys = pygame.key.get_pressed()
+        #     if keys[pygame.K_a]:
+        #         dx = -SPEED
+        #     elif keys[pygame.K_d]:
+        #         dx = SPEED
+        #     if keys[pygame.K_w] and not self.jump:
+        #         self.vel_y = -30
+        #         self.jump = True
+        #     if keys[pygame.K_j] and self.attack_cooldown == 0:
+        #         self.attacking = True
+        #         # self.attack_sound.play()
+        #         rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+        #                 if not self.flip else
+        #                 pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
+        #         if rect.colliderect(other.rect):
+        #             other.health -= 10/3
+        #         self.attack_cooldown = 20
+        # # ---------------------------
+        # # AI CONTROL SECTION
+        # # ---------------------------
+        # else:
+        #     action = self.select_action(state)
+        #     if action == 0:
+        #         dx = -SPEED
+        #     elif action == 1:
+        #         dx = SPEED
+        #     elif action == 2 and not self.jump:
+        #         self.vel_y = -30
+        #         self.jump = True
+        #     elif action in (3, 4) and self.attack_cooldown == 0:
+        #         self.attacking = True
+        #         rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
+        #                 if not self.flip else
+        #                 pygame.Rect(self.rect.x - 3*self.rect.width, self.rect.y, 3*self.rect.width, self.rect.height))
                 
-                # other.health -= 10/3
-                self.attack_cooldown = 20
+        #         # other.health -= 10/3
+        #         self.attack_cooldown = 20
 
-                # 2. Attack result
-                if rect.colliderect(other.rect):
-                    other.health -= 10 / 3
-                    if self.training_phase==1:
-                        reward += 1.0
-                    else:
-                        reward += 0.3
-                else:
-                    if action in (3, 4):
-                        if new_dx < 80:
-                            reward += 0.1
-                        else:  
-                            reward -= 0.5  # stronger penalty for missing
+        #         # 2. Attack result
+        #         if rect.colliderect(other.rect):
+        #             other.health -= 10 / 3
+        #             if self.training_phase==1:
+        #                 reward += 1.0
+        #             else:
+        #                 reward += 0.3
+        #         else:
+        #             if action in (3, 4):
+        #                 if new_dx < 80:
+        #                     reward += 0.1
+        #                 else:  
+        #                     reward -= 0.5  # stronger penalty for missing
 
-            # -------------------------------------
-            # REWARD CALCULATION (refactored)
-            # -------------------------------------
-
-            
-
-            # 1. Distance shaping (encourage approaching, penalize retreat)
-            new_dx = abs(self.rect.x - other.rect.x)
-            if prev_dx is not None:
-                move_toward = (prev_dx - new_dx) / 10.0  # scaled for stability
-                reward += np.clip(move_toward, -0.5, 0.5)
+        #     # -------------------------------------
+        #     # REWARD CALCULATION (refactored)
+        #     # -------------------------------------
 
             
+
+        #     # 1. Distance shaping (encourage approaching, penalize retreat)
+        #     new_dx = abs(self.rect.x - other.rect.x)
+        #     if prev_dx is not None:
+        #         move_toward = (prev_dx - new_dx) / 10.0  # scaled for stability
+        #         reward += np.clip(move_toward, -0.5, 0.5)
+
             
-            if not self.training_phase == 1:
-                # 3. Balance reward (avoid one-sided fights)
-                health_gap = abs(self.health - other.health) / 100.0
-                balance_penalty = -min(1.0, (health_gap / 0.3) ** 2)
-                reward += balance_penalty
+            
+        #     if not self.training_phase == 1:
+        #         # 3. Balance reward (avoid one-sided fights)
+        #         health_gap = abs(self.health - other.health) / 100.0
+        #         balance_penalty = -min(1.0, (health_gap / 0.3) ** 2)
+        #         reward += balance_penalty
 
-                # 4. Duration shaping (penalize too-short or too-long fights)    
-                target = 60.0
-                sigma = 20.0
-                reward += np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
+        #         # 4. Duration shaping (penalize too-short or too-long fights)    
+        #         target = 60.0
+        #         sigma = 20.0
+        #         reward += np.exp(-((elapsed - target) ** 2) / (2 * sigma ** 2)) - 0.5
 
-                # 5. Terminal bonus
-                if self.health <= 0 or other.health <= 0:
-                    if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
-                        reward += 3.0
-                    else:
-                        reward -= 3.0
+        #         # 5. Terminal bonus
+        #         if self.health <= 0 or other.health <= 0:
+        #             if 55 <= elapsed <= 65 and abs(self.health - other.health) < 25:
+        #                 reward += 3.0
+        #             else:
+        #                 reward -= 3.0
 
-            # 6. Clamp and accumulate
-            self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
-            reward = np.clip(self.smoothed_reward, -5.0, 5.0)
-            self.episode_reward += reward
+        #     # 6. Clamp and accumulate
+        #     self.smoothed_reward = 0.9 * getattr(self, "smoothed_reward", 0) + 0.1 * reward
+        #     reward = np.clip(self.smoothed_reward, -5.0, 5.0)
+        #     self.episode_reward += reward
 
-            # store debugging info (inspect these logs to tune coefficients)
-            self.debug_last_reward = {
-                "reward_total": float(reward),
-                "distance": float(move_toward) if 'move_toward' in locals() else 0.0,
-                "on_hit": float(1.0 if rect.colliderect(other.rect) else -0.5),
-                "balance_penalty": float(balance_penalty) if 'balance_penalty' in locals() else 0.0,
-            }
+        #     # store debugging info (inspect these logs to tune coefficients)
+        #     self.debug_last_reward = {
+        #         "reward_total": float(reward),
+        #         "distance": float(move_toward) if 'move_toward' in locals() else 0.0,
+        #         "on_hit": float(1.0 if rect.colliderect(other.rect) else -0.5),
+        #         "balance_penalty": float(balance_penalty) if 'balance_penalty' in locals() else 0.0,
+        #     }
 
 
-        # block overlap
-        new_x = self.rect.x + dx
-        temp = self.rect.copy()
-        temp.x = new_x
-        if temp.colliderect(other.rect): dx = 0
+        # # block overlap
+        # new_x = self.rect.x + dx
+        # temp = self.rect.copy()
+        # temp.x = new_x
+        # if temp.colliderect(other.rect): dx = 0
 
-        self.rect.x = max(0, min(self.rect.x + dx, self.screen_width - self.rect.width))
-        self.rect.y = max(0, min(self.rect.y + dy, (self.screen_width/2) - self.rect.height))
-        if self.rect.y >= (self.screen_width/2) - self.rect.height:
-            self.jump = False
+        # self.rect.x = max(0, min(self.rect.x + dx, self.screen_width - self.rect.width))
+        # self.rect.y = max(0, min(self.rect.y + dy, (self.screen_width/2) - self.rect.height))
+        # if self.rect.y >= (self.screen_width/2) - self.rect.height:
+        #     self.jump = False
 
-        if self.health <= 0:
-            done = True
-            self.alive = False
+        # if self.health <= 0:
+        #     done = True
+        #     self.alive = False
 
-        next_state = self.get_state(other)
-        if self.mode == "play" and self.role == "player":
-            pass
-        else:
-            # self.update_action(action)
-            self.remember(state, action, self.smoothed_reward, next_state, done)
+        # next_state = self.get_state(other)
+        # if self.mode == "play" and self.role == "player":
+        #     pass
+        # else:
+        #     # self.update_action(action)
+        #     self.remember(state, action, self.smoothed_reward, next_state, done)
         
 
-        self.step_count += 1
-        self.attack_cooldown = max(0, self.attack_cooldown - 1)
+        # self.step_count += 1
+        # self.attack_cooldown = max(0, self.attack_cooldown - 1)
 
 
     def move(self, other, round_over, elapsed):

@@ -13,16 +13,29 @@ torch.manual_seed(0)
 mixer.init()
 pygame.init()
 base_lr = 1e-4
-MODE = "train" # play, train or eval
-PHASE = 3
+MODE = "play" # play, train or eval
+PHASE = 5
 
 SAVE_INTERVAL = 50
 TOTAL_EPISODES = 1000
 
+if PHASE != 1:
+    TOTAL_EPISODES = 2000
+
+#make folder structure
+os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
+
+
+os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
+os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
+
+os.makedirs("recordings", exist_ok=True)
+
 # if not MODE =="play":
 PLAYER_1_MODEL_PATH = "weights/player_1/phase_1/model/_ep_"
 
-if not PHASE ==1:
+if not PHASE == 1:
     player1_variants = [x for x in range(0,1201,50)]
     print(player1_variants)
     chosen_variant = random.choice(player1_variants)
@@ -37,15 +50,6 @@ win_logger = Logger(log_dir="logs", filename_prefix=f"phase_{PHASE}_win")
 
 print(f"[INFO] Logging to {step_logger.path()}")
 
-#make folder structure
-os.makedirs(f"weights/player_1/phase_{PHASE}/model", exist_ok=True)
-os.makedirs(f"weights/player_1/phase_{PHASE}/optimizer", exist_ok=True)
-
-
-os.makedirs(f"weights/player_2/phase_{PHASE}/model", exist_ok=True)
-os.makedirs(f"weights/player_2/phase_{PHASE}/optimizer", exist_ok=True)
-
-os.makedirs("recordings", exist_ok=True)
 
 # create game window
 SCREEN_WIDTH = 1000
@@ -165,12 +169,11 @@ fighter_2 = Fighter(
     x=700, y=310, flip=True,
     data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
     attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    role="enemy", training_phase = PHASE, continue_from_episode = 2000, mode=MODE
+    role="enemy", training_phase = 4, continue_from_episode = 2000, mode=MODE
 )
 
 if not PHASE == 1:
-    fighter_1.epsilon = 0.0  # Fixed (opponent)
-    # fighter_2.epsilon_start = 1.0
+    fighter_1.epsilon = 0.0 
     q1 = loss1 = 0
 
 run = True
@@ -178,9 +181,9 @@ episode_step=0
 
 def set_learning_rate(PHASE, episodes, fighter):
     if PHASE == 2 and episodes>1000:
-        fighter.lr = 5e-5
+        fighter_2.lr = 5e-5
     elif PHASE == 3:
-        fighter.lr = 5e-5
+        fighter_2.lr = 5e-5
     
 p1_win_rate = 0
 p2_win_rate = 0
@@ -211,20 +214,6 @@ while run:
         secs   = int(rem)%60
         draw_text(f"{mins}:{secs:02d}", count_font, RED, SCREEN_WIDTH/2-40, 10)
 
-        # agents move, learn, and draw themselves
-        # if MODE=="play":
-        #     keys = pygame.key.get_pressed()
-        #     action_p1 = [0, 0, 0, 0]  # [left, right, jump, attack]
-
-        #     if keys[pygame.K_a]:
-        #         action_p1[0] = 1  # move left
-        #     if keys[pygame.K_d]:
-        #         action_p1[1] = 1  # move right
-        #     if keys[pygame.K_w]:
-        #         action_p1[2] = 1  # jump
-        #     if keys[pygame.K_j]:
-        #         action_p1[3] = 1  # attack
-        # else:
         fighter_1.move(fighter_2, round_over, elapsed)
         fighter_2.move(fighter_1, round_over, elapsed)
 
@@ -420,25 +409,6 @@ while run:
             episode_step=0
             fighter_1.reset()
             fighter_2.reset()
-
-    # if episodes_elapsed >= TOTAL_EPISODES and PHASE==1:
-    #     episodes_elapsed = 0
-    #     PHASE = 2
-
-    #     fighter_1 = Fighter(
-    #     player=1,
-    #         x=200, y=310, flip=False,
-    #         data=WARRIOR_DATA, sprite_sheet=WARRIOR_SHEET, animation_steps=WARRIOR_STEPS,
-    #         attack_sound=sword_fx, screen_width=SCREEN_WIDTH, 
-    #         role="player", training_phase = 2, continue_from_episode = TOTAL_EPISODES
-    #     )
-    #     fighter_2 = Fighter(
-    #         player=2,
-    #         x=700, y=310, flip=True,
-    #         data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
-    #         attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    #         role="enemy", training_phase = 2, continue_from_episode = TOTAL_EPISODES
-    #     )
 
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
