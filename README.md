@@ -95,6 +95,11 @@
 
 ## 7. References
 
-* BoxStacker article for RL in virtual environments.
-* DQN / RL standard references.
-* Any other relevant papers (if needed).
+- Baker, B., Akkaya, I., Zaremba, W. et al. (2019) Emergent tool use from multi-agent interaction. arXiv preprint arXiv:1909.07528.
+- Coding With Russ (2024) brawler_tut. GitHub. Available at: https://github.com/russs123/brawler_tut
+ [Accessed 12 Nov 2025].
+- Hasselt, H.V., Guez, A. and Silver, D. (2016) Deep reinforcement learning with double Q-learning. Proceedings of the AAAI Conference on Artificial Intelligence, 30(1), pp. 2094–2100.
+- Mnih, V. et al. (2015) Human-level control through deep reinforcement learning. Nature, 518(7540), pp. 529–533.
+- Ng, A.Y., Harada, D. and Russell, S. (1999) Policy invariance under reward transformations: Theory and application to reward shaping. Proceedings of ICML, pp. 278–287.
+- Silver, D. et al. (2017) Mastering the game of Go without human knowledge. Nature, 550(7676), pp. 354–359.
+- Sutton, R.S. and Barto, A.G. (2018) Reinforcement Learning: An Introduction. 2nd ed. MIT Press.
