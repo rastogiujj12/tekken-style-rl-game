@@ -92,12 +92,12 @@ WIZARD_STEPS  = [8,  8, 1, 8, 8, 3, 7]
 # audio
 sword_fx = pygame.mixer.Sound("assets/audio/sword.wav");   sword_fx.set_volume(0.5)
 magic_fx = pygame.mixer.Sound("assets/audio/magic.wav");   magic_fx.set_volume(0.75)
-if MODE=="play":
-    pygame.mixer.music.load("assets/audio/music.mp3")
-    pygame.mixer.music.set_volume(0.5)
-    pygame.mixer.music.play(-1, 0.0, 5000)
-else:
-    pygame.mixer.quit()
+# if MODE=="play":
+#     pygame.mixer.music.load("assets/audio/music.mp3")
+#     pygame.mixer.music.set_volume(0.5)
+#     pygame.mixer.music.play(-1, 0.0, 5000)
+# else:
+pygame.mixer.quit()
 
 # graphics
 bg = pygame.image.load("assets/images/background/background.jpg").convert_alpha()
@@ -162,14 +162,14 @@ fighter_1 = Fighter(
     x=200, y=310, flip=False,
     data=WARRIOR_DATA, sprite_sheet=WARRIOR_SHEET, animation_steps=WARRIOR_STEPS,
     attack_sound=sword_fx, screen_width=SCREEN_WIDTH, 
-    role="player", training_phase = PHASE, continue_from_episode = chosen_variant, mode=MODE
+    role="player", training_phase = 1, continue_from_episode = 1000, mode=MODE
 )
 fighter_2 = Fighter(
     player=2,
     x=700, y=310, flip=True,
     data=WIZARD_DATA, sprite_sheet=WIZARD_SHEET, animation_steps=WIZARD_STEPS,
     attack_sound=magic_fx, screen_width=SCREEN_WIDTH,
-    role="enemy", training_phase = 4, continue_from_episode = 2000, mode=MODE
+    role="new_script", training_phase = 1, continue_from_episode = 750, mode=MODE
 )
 
 if not PHASE == 1:

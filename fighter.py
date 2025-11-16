@@ -140,6 +140,7 @@ class Fighter:
         self.train_start       = 2000
         self.update_target_steps = 200
         self.step_count        = 0
+        self.action_timer = 0
         if self.mode=="play":
             self.epsilon = 0
 
@@ -477,6 +478,456 @@ class Fighter:
         # self.step_count += 1
         # self.attack_cooldown = max(0, self.attack_cooldown - 1)
 
+    def get_action(self, other):
+        """
+        Scripted enemy policy for demo:
+        - persistent movements (hold for several frames)
+        - aggression scales with opponent health (more aggressive when opponent has lots of health)
+        - retreats/mercy when opponent is low and self is high
+        - jitter, feints, occasional jumps
+        - returns integer action (0:left, 1:right, 2:jump, 3:attack_primary, 4:attack_alt)
+        """
+
+        # sanity init of bookkeeping (if constructor wasn't updated)
+        if not hasattr(self, "script_action_hold"):
+            self.script_action_hold = None
+            self.script_hold_timer = 0
+            self.action_timer = 0
+            self.last_attack_frame = -9999
+            self.feint_pending = False
+
+        self.action_timer += 1
+        # decrease any hold timers
+        if self.script_hold_timer > 0:
+            self.script_hold_timer -= 1
+            # still holding an action: return it
+            if self.script_hold_timer > 0:
+                return self.script_action_hold
+            # if timer just hit 0 we will fall through and pick a new action
+
+        # short names
+        my_hp = float(self.health)
+        their_hp = float(other.health)
+        abs_dist = abs(self.rect.x - other.rect.x)        # pixel distance
+        sign = 1 if (other.rect.x > self.rect.x) else -1  # direction to move to approach (other is to right => sign=1)
+
+        # behaviour knobs
+        desired_range = 150           # ideal spacing in pixels (we'll try to maintain)
+        close_range   = 90            # "in attack range" threshold
+        far_range     = 300
+
+        # Aggression score:
+        # - increases when opponent has high health
+        # - reduced when self is very healthy (we may be conservative/taunt)
+        # - reduced further when opponent is low and we are healthy (mercy)
+        opp_norm = np.clip(their_hp / 100.0, 0.0, 1.0)
+        self_norm = np.clip(my_hp / 100.0, 0.0, 1.0)
+
+        # base aggression (0..1)
+        agg = 0.3 + 0.7 * opp_norm          # baseline increases strongly with opponent health
+        # reduce aggression if we have a big lead
+        health_gap = (self_norm - opp_norm)    # positive means we are healthier
+        if health_gap > 0.25:
+            agg -= health_gap * 0.8           # back off when we have a clear advantage
+        agg = float(np.clip(agg, 0.05, 0.95))
+        if health_gap < -0.25:
+            agg -= health_gap * 0.8           # get aggressive if about to lose
+        agg = float(np.clip(agg, 0.05, 0.95))
+
+        # If opponent is very low and we are much stronger -> prefer retreat / taunt
+        if their_hp < 25 and my_hp > 55 and abs_dist < desired_range * 1.6:
+            # retreat quickly and do taunts/feints
+            # move away (opponent is on our right => move right to retreat)
+            retreat_dir = 0 if (self.rect.x > other.rect.x) else 1
+            # hold retreat for a short burst
+            self.script_action_hold = retreat_dir
+            self.script_hold_timer = random.randint(8, 18)
+            # occasional taunt: sometimes trigger a jump or small forward step instead of pure retreat
+            if random.random() < 0.25:
+                # 2 = jump (small taunt)
+                self.feint_pending = True
+            return self.script_action_hold
+
+        # If we are much weaker -> become desperate & aggressive
+        if my_hp < 30 and their_hp > 50:
+            # DESPERATION MODE: rush in aggressively
+            # Move toward the player for several frames
+            direction = 1 if (self.rect.x < other.rect.x) else 0
+            self.script_action_hold = direction
+            self.script_hold_timer = random.randint(6, 12)
+
+            # 30–40% chance to perform an immediate desperate attack
+            if abs_dist < desired_range * 1.2 and random.random() < 0.4:
+                self.script_action_hold = 3  # attack
+                self.script_hold_timer = random.randint(4, 8)
+                return 3
+
+            # Occasional erratic jumps (feels panic/desperation)
+            if random.random() < 0.1:
+                self.script_action_hold = 2  # jump
+                self.script_hold_timer = random.randint(4, 8)
+                return 2
+
+        # Normal behaviour: maintain spacing, close to attack, then retreat back to desired range
+        # If we are too far -> approach
+        if abs_dist > desired_range + 30:
+            # approach (move toward opponent)
+            approach_dir = 1 if (other.rect.x > self.rect.x) else 0
+            self.script_action_hold = approach_dir
+            self.script_hold_timer = random.randint(6, 14)   # hold movement for a handful of frames (makes motion smooth)
+            # small chance of a feint while approaching
+            if random.random() < 0.08:
+                # do a small jump as a feint
+                self.feint_pending = True
+            return self.script_action_hold
+
+        # If in comfortable range, consider attacking with probability proportional to aggression
+        if abs_dist <= desired_range + 10:
+            # base attack probability scaled by aggression and closeness
+            dist_factor = np.clip(1.0 - (abs_dist / (desired_range + 10.0)), 0.0, 1.0)  # 1 when very close
+            attack_prob = 0.08 + 0.45 * agg * dist_factor   # tuned probabilities
+            # don't spam attacks: require a minimum gap between attack attempts
+            min_frames_between_attacks = 18
+            can_attack = (self.action_timer - self.last_attack_frame) > min_frames_between_attacks
+
+            if can_attack and random.random() < attack_prob:
+                # choose primary vs alternate attack (small randomness)
+                attack_action = 3 if random.random() < 0.8 else 4
+                self.script_action_hold = attack_action
+                # attack animation / execution should be held for a bit so it's visible
+                self.script_hold_timer = random.randint(10, 18)
+                self.last_attack_frame = self.action_timer
+                # small chance to feint (attack animation but intentionally short/higher miss chance simulated by alternating with jump)
+                if random.random() < 0.12:
+                    self.feint_pending = True
+                return attack_action
+
+            # otherwise we prefer to "dance" at spacing: small jitter moves or idle (simulate taunting)
+            if random.random() < 0.18:
+                # small random step left/right for a short time (jitter)
+                jitter_dir = 1 if random.random() < 0.5 else 0
+                self.script_action_hold = jitter_dir
+                self.script_hold_timer = random.randint(3, 8)
+                return self.script_action_hold
+
+            if random.random() < 0.07:
+                # a little show-off: quick jump / feint
+                self.script_action_hold = 2
+                self.script_hold_timer = random.randint(4, 8)
+                return 2
+
+            # taunt: do nothing meaningful, but since there is no explicit idle action, we jitter tiny steps occasionally
+            if random.random() < 0.25:
+                # small step away to create spacing and 'taunt'
+                away_dir = 0 if (self.rect.x > other.rect.x) else 1
+                self.script_action_hold = away_dir
+                self.script_hold_timer = random.randint(4, 10)
+                return away_dir
+
+            # fallback: small time where we choose to not change position (simulate "no-op")
+            # there's no explicit no-op action, so return a tiny jitter (one frame) or keep previous action
+            if self.script_action_hold is not None and self.script_hold_timer <= 0:
+                # hold nothing — return a tiny random movement single-frame
+                if random.random() < 0.5:
+                    return 4  # a quick alternative attack (serves as a visual micro-action)
+                return 1 if random.random() < 0.5 else 0
+
+        # Catch-all: small random behavior to keep it lively.
+        if random.random() < 0.08:
+            # jump occasionally
+            self.script_action_hold = 2
+            self.script_hold_timer = random.randint(3, 7)
+            return 2
+        if random.random() < 0.12:
+            # spontaneous small step
+            self.script_action_hold = 1 if random.random() < 0.5 else 0
+            self.script_hold_timer = random.randint(4, 10)
+            return self.script_action_hold
+
+        # final fallback: idle-ish micro-move
+        return 4  # a benign quick-action (treated as alternate attack in engine but visually OK for demo)
+
+
+    def get_new_script_action(self, other):
+        """
+        Aggressive, consistent fighter:
+        - always tries to hit when in attack range
+        - approaches quickly
+        - fewer jumps and feints
+        - mercy condition respected
+        """
+
+        # Init missing fields
+        if not hasattr(self, "script_action_hold"):
+            self.script_action_hold = None
+            self.script_hold_timer = 0
+            self.action_timer = 0
+            self.last_attack_frame = -9999
+            self.feint_pending = False
+
+        self.action_timer += 1
+
+        # Hold logic
+        if self.script_hold_timer > 0:
+            self.script_hold_timer -= 1
+            if self.script_hold_timer > 0:
+                return self.script_action_hold
+
+        # Shortcuts
+        my_hp = float(self.health)
+        their_hp = float(other.health)
+        abs_dist = abs(self.rect.x - other.rect.x)
+
+        # Direction: move toward opponent (1=right, 0=left)
+        towards = 1 if (other.rect.x > self.rect.x) else 0
+        away    = 0 if (other.rect.x > self.rect.x) else 1
+
+        # Tuned ranges
+        desired_range = 150
+        close_range   = 90
+
+        # Aggression based heavily on opponent health
+        opp_norm = np.clip(their_hp / 100.0, 0.0, 1.0)
+        agg = 0.55 + 0.45 * opp_norm  # always high
+        agg = float(np.clip(agg, 0.65, 0.98))
+
+        # -------------------------------------------------------------------
+        #  MERCY CONDITION (no attacking)
+        # -------------------------------------------------------------------
+        if their_hp < 25 and my_hp > 55 and abs_dist < desired_range * 1.5:
+            # retreat smoothly
+            self.script_action_hold = away
+            self.script_hold_timer = random.randint(10, 18)
+            return away
+
+        # -------------------------------------------------------------------
+        #  DESPERATION MODE (even more aggressive)
+        # -------------------------------------------------------------------
+        if my_hp < 30 and their_hp > 50:
+            # rush
+            self.script_action_hold = towards
+            self.script_hold_timer = random.randint(6, 12)
+
+            # if in attack range, attack immediately
+            if abs_dist <= desired_range:
+                self.last_attack_frame = self.action_timer
+                return 3
+
+            return towards
+
+        # -------------------------------------------------------------------
+        #  AGGRESSIVE SPACING LOGIC
+        # -------------------------------------------------------------------
+
+        # Too far: sprint in
+        if abs_dist > desired_range:
+            self.script_action_hold = towards
+            self.script_hold_timer = random.randint(8, 14)
+            return towards
+
+        # Slightly out of ideal close range: close to pressure
+        if abs_dist > close_range:
+            self.script_action_hold = towards
+            self.script_hold_timer = random.randint(6, 10)
+            return towards
+
+        # -------------------------------------------------------------------
+        #  IN RANGE → ALWAYS TRY TO HIT
+        # -------------------------------------------------------------------
+
+        min_frames_between_attacks = 16
+        can_attack = (self.action_timer - self.last_attack_frame) > min_frames_between_attacks
+
+        if can_attack:
+            # attack aggressively
+            attack_action = 3 if random.random() < 0.85 else 4
+            self.script_action_hold = attack_action
+            self.script_hold_timer = random.randint(12, 16)
+            self.last_attack_frame = self.action_timer
+            return attack_action
+
+        # Otherwise maintain close pressure
+        # gentle micro steps to keep in range
+        if abs_dist < close_range - 20:
+            # back up slightly to avoid hugging too close
+            self.script_action_hold = away
+            self.script_hold_timer = random.randint(4, 8)
+            return away
+
+        # Otherwise hold ground
+        return towards
+
+
+
+    def get_dumb_action(self, other):
+        """
+        Worse/jittery version of scripted enemy:
+        - more hesitation
+        - shorter decision holds
+        - random stutters and feints
+        - slight irrational decisions
+        """
+
+        # sanity init
+        if not hasattr(self, "script_action_hold"):
+            self.script_action_hold = None
+            self.script_hold_timer = 0
+            self.action_timer = 0
+            self.last_attack_frame = -9999
+            self.feint_pending = False
+
+        self.action_timer += 1
+
+        # --- More chance to break out early from a hold (simulate sloppiness)
+        if self.script_hold_timer > 0:
+            self.script_hold_timer -= 1
+
+            # enemy may prematurely cancel its plan
+            if random.random() < 0.10:
+                self.script_hold_timer = 0  
+
+            if self.script_hold_timer > 0:
+                return self.script_action_hold
+
+        # short names
+        my_hp = float(self.health)
+        their_hp = float(other.health)
+        abs_dist = abs(self.rect.x - other.rect.x)
+        sign = 1 if (other.rect.x > self.rect.x) else -1
+
+        desired_range = 150
+        close_range = 90
+        far_range = 300
+
+        opp_norm = np.clip(their_hp / 100.0, 0.0, 1.0)
+        self_norm = np.clip(my_hp / 100.0, 0.0, 1.0)
+
+        agg = 0.3 + 0.7 * opp_norm
+        health_gap = (self_norm - opp_norm)
+        if health_gap > 0.25:
+            agg -= health_gap * 0.8
+        agg = float(np.clip(agg, 0.05, 0.95))
+        if health_gap < -0.25:
+            agg -= health_gap * 0.8
+        agg = float(np.clip(agg, 0.05, 0.95))
+
+        # --- MORE RANDOM HESITATION applied globally ---
+        if random.random() < 0.05:
+            # 1–2 frame stutter
+            return 1 if random.random() < 0.5 else 0
+
+        if random.random() < 0.02:
+            # pointless jump
+            return 2
+
+        # --- MERCY / TAUNT (same logic, but messier) ---
+        if their_hp < 25 and my_hp > 55 and abs_dist < desired_range * 1.6:
+            retreat_dir = 0 if (self.rect.x > other.rect.x) else 1
+            self.script_action_hold = retreat_dir
+            
+            # shorter hold → jittery
+            self.script_hold_timer = random.randint(4, 12)
+
+            # extra taunt randomness
+            if random.random() < 0.35:
+                self.feint_pending = True
+            if random.random() < 0.2:
+                return 2  
+            return retreat_dir
+
+        # --- DESPERATION (but more sloppy) ---
+        if my_hp < 30 and their_hp > 50:
+            direction = 1 if (self.rect.x < other.rect.x) else 0
+            self.script_action_hold = direction
+
+            # shorter holds ⇒ panic jitter
+            self.script_hold_timer = random.randint(4, 8)
+
+            # more reckless jumps
+            if random.random() < 0.18:
+                return 2  
+
+            # attack, but dumber
+            if abs_dist < desired_range * 1.2 and random.random() < 0.35:
+                self.script_action_hold = 3
+                self.script_hold_timer = random.randint(6, 10)
+                self.last_attack_frame = self.action_timer
+                return 3
+
+        # --- TOO FAR → approach, but more indecisive ---
+        if abs_dist > desired_range + 30:
+            approach_dir = 1 if (other.rect.x > self.rect.x) else 0
+
+            # hesitation flip
+            if random.random() < 0.12:
+                approach_dir = 1 - approach_dir
+
+            self.script_action_hold = approach_dir
+            self.script_hold_timer = random.randint(4, 10)
+
+            if random.random() < 0.12:
+                self.feint_pending = True
+            if random.random() < 0.05:
+                return 2
+            return approach_dir
+
+        # --- In combat range: attack or jitter around ---
+        if abs_dist <= desired_range + 10:
+            dist_factor = np.clip(1.0 - (abs_dist / (desired_range + 10)), 0.0, 1.0)
+            attack_prob = (0.06 + 0.35 * agg * dist_factor)  # slightly lower => worse
+
+            can_attack = (self.action_timer - self.last_attack_frame) > 20
+
+            # BAD DECISION: sometimes choose wrong direction instead of attack
+            if random.random() < 0.06:
+                wrong = 1 if random.random() < 0.5 else 0
+                return wrong
+
+            # Attack
+            if can_attack and random.random() < attack_prob:
+                attack_action = 3 if random.random() < 0.75 else 4  
+
+                # sometimes fail and do a pointless stance
+                if random.random() < 0.15:
+                    return 2  
+
+                self.script_action_hold = attack_action
+                self.script_hold_timer = random.randint(8, 14)
+                self.last_attack_frame = self.action_timer
+
+                if random.random() < 0.15:
+                    self.feint_pending = True
+                return attack_action
+
+            # jitter around the range
+            if random.random() < 0.25:
+                jitter_dir = 1 if random.random() < 0.5 else 0
+                self.script_action_hold = jitter_dir
+                self.script_hold_timer = random.randint(2, 6)
+                return jitter_dir
+
+            if random.random() < 0.10:
+                return 2
+
+            if random.random() < 0.20:
+                away_dir = 0 if (self.rect.x > other.rect.x) else 1
+                return away_dir
+
+            # no-op micro jitter
+            return 1 if random.random() < 0.5 else 0
+
+        # --- Catch-all random junk (worse) ---
+        if random.random() < 0.12:
+            return 2
+        if random.random() < 0.15:
+            self.script_action_hold = 1 if random.random() < 0.5 else 0
+            self.script_hold_timer = random.randint(2, 6)
+            return self.script_action_hold
+
+        return 1 if random.random() < 0.5 else 0
+
+
+
 
     def move(self, other, round_over, elapsed):
         if round_over:
@@ -523,7 +974,14 @@ class Fighter:
             # ==================
             #  AI CONTROL SECTION
             # ==================
-            action = self.select_action(state)
+            if self.role == "scripted_smart":
+                action = self.get_action(other)
+            elif self.role == "scripted_dumb":
+                action = self.get_dumb_action(other)
+            elif self.role == "new_script":
+                action = self.get_new_script_action(other)
+            else:
+                action = self.select_action(state)
             if action == 0:
                 dx = -SPEED
             elif action == 1:
@@ -532,7 +990,7 @@ class Fighter:
                 self.vel_y = -30
                 self.jump = True
                 self.jump_cooldown = 25
-            elif action in (3, 4) and self.attack_cooldown == 0:
+            elif action == 3 and self.attack_cooldown == 0:
                 self.attacking = True
                 rect = (pygame.Rect(self.rect.right, self.rect.y, 3*self.rect.width, self.rect.height)
                         if not self.flip else

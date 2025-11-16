@@ -1,0 +1,3 @@
+episode,epsilon_p1,epsilon_p2,score_p1,score_p2,avg_duration,avg_reward_p1,avg_reward_p2,opponent_ep,episode_step,lr
+1,0.997,0.997,0,1,1835,0.0,0.0,0,1835,0.0001
+2,0.994,0.994,0,2,1126,0.0,0.0,900,1126,0.0001
